@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr" class="bg-zinc-100 dark:bg-zinc-950">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <title>Planche d'impression A4 · {@packed.total_items} stickers · Merch</title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <style>
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+      @media print {
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+          color: black !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        .no-print {
+          display: none !important;
+        }
+        .sheet-container {
+          padding: 0 !important;
+          gap: 0 !important;
+        }
+        .sheet-page {
+          margin: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          page-break-after: always;
+          break-after: page;
+        }
+      }
+      @media screen {
+        .sheet-page {
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+      }
+    </style>
+  </head>
+  <body class="min-h-screen text-zinc-900 antialiased">
+    <!-- Barre de contrôle supérieure (masquée lors de l'impression physique) -->
+    <header class="no-print sticky top-0 z-50 border-b border-zinc-200 bg-white/95 px-6 py-4 backdrop-blur shadow-sm dark:border-zinc-800 dark:bg-zinc-900/95">
+      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <.link
+            href={~p"/admin"}
+            class="inline-flex items-center gap-1.5 rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-xs font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+          >
+            ← Retour à l'Atelier
+          </.link>
+          <div>
+            <h1 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+              Planche d'imposition A4 · {length(@orders)} commande(s) · {@packed.total_items} stickers
+            </h1>
+            <p class="text-xs text-zinc-500">
+              Format A4 portrait (210×297 mm) · Grille 3×4 · {@packed.total_pages} page(s) · Espacement 3 mm
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            onclick="window.print()"
+            class="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-xs font-semibold text-white shadow transition hover:bg-zinc-700 hover:shadow-md dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            <svg
+              class="size-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6.72 13.829c-.24-1.015-.36-2.072-.36-3.149 0-4.032 3.033-7.38 7-7.933A7.5 7.5 0 0 1 18 10.5c0 1.077-.12 2.134-.36 3.149m-10.92 0a1.5 1.5 0 0 0-1.08 1.44v3.161c0 .828.672 1.5 1.5 1.5h11.76c.828 0 1.5-.672 1.5-1.5v-3.161a1.5 1.5 0 0 0-1.08-1.44m-12.6 0h12.6"
+              />
+            </svg>
+            <span>Imprimer / Exporter en PDF</span>
+          </button>
+
+          <%= if @order_ids != [] do %>
+            <form action={~p"/admin/print-sheet/mark-printed"} method="post" class="inline">
+              <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+              <%= for id <- @order_ids do %>
+                <input type="hidden" name="order_ids[]" value={id} />
+              <% end %>
+              <button
+                type="submit"
+                class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+              >
+                <span>Marquer ces commandes comme imprimées</span>
+              </button>
+            </form>
+          <% end %>
+        </div>
+      </div>
+    </header>
+
+    <!-- Conteneur des pages d'impression A4 -->
+    <main class="sheet-container flex flex-col items-center gap-10 p-8 sm:p-12">
+      <%= if @packed.pages == [] do %>
+        <div class="rounded-3xl border border-dashed border-zinc-300 bg-white p-12 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+          Aucun sticker à imprimer pour ces commandes.
+        </div>
+      <% end %>
+
+      <%= for page <- @packed.pages do %>
+        <!-- Une feuille physique A4 exacte (210mm x 297mm) -->
+        <section
+          class="sheet-page relative overflow-hidden bg-white text-zinc-900"
+          style="width: 210mm; min-height: 297mm; height: 297mm; max-height: 297mm; margin: 0 auto; box-sizing: border-box;"
+        >
+          <!-- En-tête technique discret dans la marge supérieure -->
+          <div
+            class="absolute text-[8px] tracking-wide text-zinc-400 font-mono select-none"
+            style="top: 8mm; left: 12mm; right: 12mm; display: flex; justify-content: space-between;"
+          >
+            <span>PLANCHE MERCH A4 · FEUILLE {page.page_number}/{page.total_pages}</span>
+            <span>{page.items_count} STICKERS (60×60 mm) · ESPACEMENT 3 mm</span>
+            <span>COMMANDE(S) : {Enum.map(@orders, &"##{&1.id}") |> Enum.join(", ")}</span>
+          </div>
+
+          <!-- Positionnement individuel de chaque sticker au millimètre près -->
+          <%= for item <- page.items do %>
+            <div
+              class="absolute flex flex-col items-center justify-center p-1 box-sizing: border-box;"
+              style={"left: #{item.x_mm}mm; top: #{item.y_mm}mm; width: #{item.width_mm}mm; height: #{item.height_mm}mm;"}
+            >
+              <!-- Ligne de guide de découpe ultra fine (faint crop guide) -->
+              <div
+                class="absolute inset-0 pointer-events-none"
+                style="border: 0.25px dashed rgba(180, 180, 180, 0.5);"
+              >
+              </div>
+
+              <!-- Repères de coupe aux 4 coins (corner crop marks) pour guider la règle et le cutter -->
+              <!-- Coin haut-gauche -->
+              <div
+                class="absolute pointer-events-none"
+                style="top: -2mm; left: -2mm; width: 4mm; height: 4mm;"
+              >
+                <svg viewBox="0 0 16 16" class="size-full overflow-visible">
+                  <line x1="8" y1="0" x2="8" y2="6" stroke="#999" stroke-width="0.5" />
+                  <line x1="0" y1="8" x2="6" y2="8" stroke="#999" stroke-width="0.5" />
+                </svg>
+              </div>
+              <!-- Coin haut-droit -->
+              <div
+                class="absolute pointer-events-none"
+                style="top: -2mm; right: -2mm; width: 4mm; height: 4mm;"
+              >
+                <svg viewBox="0 0 16 16" class="size-full overflow-visible">
+                  <line x1="8" y1="0" x2="8" y2="6" stroke="#999" stroke-width="0.5" />
+                  <line x1="10" y1="8" x2="16" y2="8" stroke="#999" stroke-width="0.5" />
+                </svg>
+              </div>
+              <!-- Coin bas-gauche -->
+              <div
+                class="absolute pointer-events-none"
+                style="bottom: -2mm; left: -2mm; width: 4mm; height: 4mm;"
+              >
+                <svg viewBox="0 0 16 16" class="size-full overflow-visible">
+                  <line x1="8" y1="10" x2="8" y2="16" stroke="#999" stroke-width="0.5" />
+                  <line x1="0" y1="8" x2="6" y2="8" stroke="#999" stroke-width="0.5" />
+                </svg>
+              </div>
+              <!-- Coin bas-droit -->
+              <div
+                class="absolute pointer-events-none"
+                style="bottom: -2mm; right: -2mm; width: 4mm; height: 4mm;"
+              >
+                <svg viewBox="0 0 16 16" class="size-full overflow-visible">
+                  <line x1="8" y1="10" x2="8" y2="16" stroke="#999" stroke-width="0.5" />
+                  <line x1="10" y1="8" x2="16" y2="8" stroke="#999" stroke-width="0.5" />
+                </svg>
+              </div>
+
+              <!-- Visuel du sticker à l'échelle -->
+              <img
+                src={item.sticker.image_path}
+                alt={item.sticker.name}
+                class="size-full object-contain pointer-events-none select-none"
+              />
+
+              <!-- Discret badge de commande pour identifier le sticker après découpe -->
+              <span
+                class="absolute select-none font-mono text-[7px] text-zinc-400 font-semibold tracking-tighter"
+                style="bottom: 1mm; right: 1.5mm; line-height: 1;"
+              >
+                #{item.order_id}
+              </span>
+            </div>
+          <% end %>
+
+          <!-- Pied de page discret dans la marge inférieure -->
+          <div
+            class="absolute text-[8px] tracking-wide text-zinc-300 font-mono select-none text-center"
+            style="bottom: 8mm; left: 12mm; right: 12mm;"
+          >
+            Trait de coupe : suivre les repères en croix aux 4 angles · Imprimer à l'échelle 100% (sans ajustement)
+          </div>
+        </section>
+      <% end %>
+    </main>
+  </body>
+</html>

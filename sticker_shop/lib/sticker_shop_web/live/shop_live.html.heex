@@ -1,0 +1,185 @@
+<Layouts.app flash={@flash} current_scope={@current_scope} max_width_class="max-w-7xl">
+  <section class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <p class="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">Vitrine</p>
+      <h1 class="mt-1 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        Stickers Antifasctistes
+      </h1>
+      <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+        Choisis tes visuels et tes quantités. Format d'impression par défaut : <span class="font-medium text-zinc-800 dark:text-zinc-200">6×6 cm</span>.
+      </p>
+    </div>
+    <p
+      id="cart-summary-badge"
+      class="inline-flex items-center gap-2 self-start rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+    >
+      <.icon name="hero-shopping-bag" class="size-4" />
+      <span id="cart-count">{@cart_count}</span>
+      <span class="text-zinc-400">·</span>
+      <span id="cart-total">{Catalog.format_price_cents(@cart_total_cents)}</span>
+    </p>
+  </section>
+
+  <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+    <div
+      id="sticker-gallery"
+      phx-update="stream"
+      class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3"
+    >
+      <div
+        id="sticker-gallery-empty"
+        class="col-span-full hidden rounded-3xl border border-dashed border-zinc-300 px-6 py-16 text-center text-sm text-zinc-500 only:block dark:border-zinc-700"
+      >
+        Aucun sticker n'est encore au catalogue.
+      </div>
+
+      <article
+        :for={{dom_id, sticker} <- @streams.stickers}
+        id={dom_id}
+        class="group flex flex-col overflow-hidden rounded-3xl border border-zinc-200/80 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <div class="relative aspect-square bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.9),transparent_45%),linear-gradient(180deg,#f4f4f5,white)] p-6 dark:bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_45%),linear-gradient(180deg,#18181b,#09090b)]">
+          <img
+            src={sticker.image_path}
+            alt={sticker.name}
+            class="size-full object-contain drop-shadow-md transition duration-300 group-hover:scale-[1.03]"
+          />
+          <span class="absolute left-4 top-4 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-medium tracking-wide text-zinc-600 shadow-sm dark:bg-zinc-950/80 dark:text-zinc-300">
+            {sticker.width_mm}×{sticker.height_mm} mm
+          </span>
+        </div>
+
+        <div class="flex flex-1 flex-col gap-4 px-5 pb-5 pt-4">
+          <div class="flex items-start justify-between gap-3">
+            <h2 class="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              {sticker.name}
+            </h2>
+            <p class="shrink-0 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              {Catalog.format_price_cents(sticker.unit_price_cents)}
+            </p>
+          </div>
+
+          <div class="mt-auto flex items-center justify-between gap-3">
+            <p class="text-xs text-zinc-500">Quantité</p>
+            <div class="flex items-center gap-2">
+              <button
+                id={"sticker-dec-#{sticker.id}"}
+                type="button"
+                phx-click="dec"
+                phx-value-id={sticker.id}
+                disabled={quantity(@quantities, sticker.id) == 0}
+                aria-label={"Retirer un #{sticker.name}"}
+                class="flex size-9 items-center justify-center rounded-full border border-zinc-200 text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                <.icon name="hero-minus" class="size-4" />
+              </button>
+              <span
+                id={"sticker-qty-#{sticker.id}"}
+                class="min-w-8 text-center text-base font-semibold tabular-nums"
+              >
+                {quantity(@quantities, sticker.id)}
+              </span>
+              <button
+                id={"sticker-inc-#{sticker.id}"}
+                type="button"
+                phx-click="inc"
+                phx-value-id={sticker.id}
+                disabled={quantity(@quantities, sticker.id) >= 99}
+                aria-label={"Ajouter un #{sticker.name}"}
+                class="flex size-9 items-center justify-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                <.icon name="hero-plus" class="size-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <aside
+      id="checkout-panel"
+      class="sticky top-24 rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <%= if @placed_order do %>
+        <div id="order-confirmation" class="space-y-4">
+          <div class="flex size-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            <.icon name="hero-check-circle" class="size-6" />
+          </div>
+          <div>
+            <h2 class="text-lg font-semibold tracking-tight">Commande enregistrée</h2>
+            <p class="mt-1 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              Merci {@placed_order.customer_name}. Ta commande
+              <span class="font-medium">#{@placed_order.id}</span>
+              de {Catalog.format_price_cents(@placed_order.total_cents)} est bien notée.
+            </p>
+          </div>
+          <button
+            id="shop-again"
+            type="button"
+            phx-click="shop_again"
+            class="inline-flex w-full items-center justify-center rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            Commander d'autres stickers
+          </button>
+        </div>
+      <% else %>
+        <h2 class="text-lg font-semibold tracking-tight">Panier</h2>
+        <p class="mt-1 text-sm text-zinc-500">Pas de compte : prénom, nom et email suffisent.</p>
+
+        <ul id="cart-lines" class="mt-5 space-y-3">
+          <li
+            :if={@cart_lines == []}
+            id="cart-empty"
+            class="rounded-2xl bg-zinc-50 px-3 py-4 text-sm text-zinc-500 dark:bg-zinc-800/60"
+          >
+            Ton panier est vide.
+          </li>
+          <li
+            :for={line <- @cart_lines}
+            id={"cart-line-#{line.sticker.id}"}
+            class="flex items-center justify-between gap-3 text-sm"
+          >
+            <span class="min-w-0 truncate font-medium">{line.sticker.name}</span>
+            <span class="shrink-0 tabular-nums text-zinc-500">
+              {line.quantity} × {Catalog.format_price_cents(line.sticker.unit_price_cents)}
+            </span>
+          </li>
+        </ul>
+
+        <div class="mt-5 flex items-baseline justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
+          <span class="text-sm text-zinc-500">Total</span>
+          <span id="checkout-total" class="text-xl font-semibold tabular-nums">
+            {Catalog.format_price_cents(@cart_total_cents)}
+          </span>
+        </div>
+
+        <.form
+          for={@form}
+          id="checkout-form"
+          phx-change="validate"
+          phx-submit="place_order"
+          class="mt-5 space-y-1"
+        >
+          <.input
+            field={@form[:first_name]}
+            type="text"
+            label="Prénom"
+            autocomplete="given-name"
+          />
+          <.input field={@form[:last_name]} type="text" label="Nom" autocomplete="family-name" />
+          <.input field={@form[:email]} type="email" label="Email" autocomplete="email" />
+
+          <button
+            id="checkout-submit"
+            type="submit"
+            disabled={@cart_count == 0}
+            phx-disable-with="Envoi..."
+            class="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            Valider la commande
+          </button>
+        </.form>
+      <% end %>
+    </aside>
+  </div>
+</Layouts.app>
