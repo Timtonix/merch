@@ -11,8 +11,21 @@ defmodule StickerShop.Catalog do
     Repo.all(from s in Sticker, order_by: [asc: s.name])
   end
 
-  def list_active_stickers do
-    Repo.all(from s in Sticker, where: s.active == true, order_by: [asc: s.name])
+  def list_active_stickers(opts \\ []) do
+    base = from s in Sticker, where: s.active == true, order_by: [asc: s.name]
+
+    Enum.reduce(opts, base, fn
+      {:category, category}, query when is_binary(category) and category != "all" ->
+        from s in query, where: s.category == ^category
+
+      _, query ->
+        query
+    end)
+    |> Repo.all()
+  end
+
+  def list_categories do
+    Repo.all(from s in Sticker, where: s.active == true, select: s.category, distinct: true)
   end
 
   def get_sticker!(id), do: Repo.get!(Sticker, id)
@@ -40,7 +53,12 @@ defmodule StickerShop.Catalog do
   end
 
   def delete_sticker(%Sticker{} = sticker) do
-    Repo.delete(sticker)
+    sticker
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.no_assoc_constraint(:order_items,
+      message: "des commandes sont associées à ce sticker"
+    )
+    |> Repo.delete()
   end
 
   @doc """

@@ -39,7 +39,36 @@ defmodule StickerShop.OrdersTest do
       assert [item] = order.order_items
       assert item.quantity == 3
       assert item.unit_price_cents == 200
+      assert item.format == "standard_6x6"
+      assert item.width_mm == 60
+      assert item.height_mm == 60
       assert item.sticker.id == sticker.id
+    end
+
+    test "create_order/2 computes prices and dimensions for custom formats", %{sticker: sticker} do
+      attrs = %{customer_name: "Tim", customer_email: "tim@example.com"}
+
+      items = [
+        %{sticker_id: sticker.id, quantity: 1, format: "poster_a4"},
+        %{sticker_id: sticker.id, quantity: 2, format: "medium_10x10"}
+      ]
+
+      assert {:ok, %Order{} = order} = Orders.create_order(attrs, items)
+      # poster_a4 = 250c, medium_10x10 for 200c base = 500c * 2 = 1000c. Total = 1250c
+      assert order.total_cents == 1250
+      assert length(order.order_items) == 2
+
+      poster = Enum.find(order.order_items, &(&1.format == "poster_a4"))
+      assert poster.quantity == 1
+      assert poster.unit_price_cents == 250
+      assert poster.width_mm == 190
+      assert poster.height_mm == 270
+
+      medium = Enum.find(order.order_items, &(&1.format == "medium_10x10"))
+      assert medium.quantity == 2
+      assert medium.unit_price_cents == 500
+      assert medium.width_mm == 100
+      assert medium.height_mm == 100
     end
 
     test "create_order/2 ignores client-supplied prices", %{sticker: sticker} do

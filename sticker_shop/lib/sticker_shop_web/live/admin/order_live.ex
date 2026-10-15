@@ -2,6 +2,7 @@ defmodule StickerShopWeb.Admin.OrderLive do
   use StickerShopWeb, :live_view
 
   alias StickerShop.Catalog
+  alias StickerShop.Catalog.ImageOptimizer
   alias StickerShop.Orders
   alias StickerShop.Printing.SheetPacker
 
@@ -20,7 +21,7 @@ defmodule StickerShopWeb.Admin.OrderLive do
       |> assign(:stickers, Catalog.list_stickers())
       |> assign_new_sticker_form(%{})
       |> allow_upload(:sticker_image,
-        accept: ~w(.svg .png .jpg .jpeg),
+        accept: ~w(.svg .png .jpg .jpeg .webp),
         max_entries: 1,
         max_file_size: 15_000_000
       )
@@ -136,6 +137,23 @@ defmodule StickerShopWeb.Admin.OrderLive do
     end
   end
 
+  def handle_event("set_sticker_category", %{"id" => id, "category" => category}, socket) do
+    with {sticker_id, ""} <- Integer.parse(id),
+         sticker when not is_nil(sticker) <- Catalog.get_sticker(sticker_id),
+         valid_category when valid_category in ["general", "bicus"] <- category,
+         {:ok, updated} <- Catalog.update_sticker(sticker, %{category: valid_category}) do
+      label = if updated.category == "bicus", do: "Bicus 🔒", else: "Général"
+
+      {:noreply,
+       socket
+       |> put_flash(:info, "Catégorie de « #{updated.name} » mise à jour : #{label}.")
+       |> assign(:stickers, Catalog.list_stickers())}
+    else
+      _ ->
+        {:noreply, put_flash(socket, :error, "Impossible de modifier la catégorie.")}
+    end
+  end
+
   def handle_event("cancel_upload", %{"ref" => ref}, socket) do
     {:noreply, cancel_upload(socket, :sticker_image, ref)}
   end
@@ -150,23 +168,33 @@ defmodule StickerShopWeb.Admin.OrderLive do
         ext = Path.extname(entry.client_name) |> String.downcase()
         timestamp = System.system_time(:millisecond)
         random_suffix = Base.url_encode64(:crypto.strong_rand_bytes(6), padding: false)
-        clean_ext = if ext in ~w(.svg .png .jpg .jpeg), do: ext, else: ".png"
+        clean_ext = if ext in ~w(.svg .png .jpg .jpeg .webp), do: ext, else: ".png"
         filename = "sticker_#{timestamp}_#{random_suffix}#{clean_ext}"
 
-        # 1. Dossier build pour service immédiat par Plug.Static
-        build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
-        File.mkdir_p!(build_dir)
-        File.cp!(path, Path.join(build_dir, filename))
-
-        # 2. Dossier source pour persistance au-delà des recompilations
+        # 1. Dossier source pour persistance au-delà des recompilations
         source_dir = Path.expand("priv/static/uploads/stickers")
         File.mkdir_p!(source_dir)
-        File.cp!(path, Path.join(source_dir, filename))
+        source_target = Path.join(source_dir, filename)
+
+        # 2. Dossier build pour service immédiat par Plug.Static
+        build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
+        File.mkdir_p!(build_dir)
+        build_target = Path.join(build_dir, filename)
+
+        # Optimisation automatique 300 DPI (sans perte de netteté)
+        ImageOptimizer.optimize(path, source_target)
+        File.cp!(source_target, build_target)
 
         {:ok, "/uploads/stickers/#{filename}"}
       end)
 
     image_path = List.first(uploaded_files)
+
+    category =
+      case params["category"] do
+        "bicus" -> "bicus"
+        _ -> "general"
+      end
 
     with {:ok, price_cents} <- parse_price_cents(params["price_euros"]),
          name when is_binary(name) and byte_size(name) > 0 <- String.trim(params["name"] || ""),
@@ -175,6 +203,7 @@ defmodule StickerShopWeb.Admin.OrderLive do
          true <- not is_nil(image_path) do
       attrs = %{
         name: name,
+        category: category,
         unit_price_cents: price_cents,
         image_path: image_path,
         width_mm: width_mm,
@@ -223,7 +252,8 @@ defmodule StickerShopWeb.Admin.OrderLive do
   defp assign_new_sticker_form(socket, params) do
     default_params = %{
       "name" => "",
-      "price_euros" => "3.50",
+      "category" => "general",
+      "price_euros" => "0.20",
       "width_mm" => Integer.to_string(@default_slot_size),
       "height_mm" => Integer.to_string(@default_slot_size)
     }

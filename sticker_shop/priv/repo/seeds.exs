@@ -10,31 +10,35 @@ if Repo.aggregate(Sticker, :count) == 0 do
   stickers = [
     %{
       name: "Phoenix",
-      unit_price_cents: 350,
+      unit_price_cents: 20,
       image_path: "/images/stickers/phoenix.svg",
       width_mm: 60,
-      height_mm: 60
+      height_mm: 60,
+      category: "general"
     },
     %{
       name: "Beam",
-      unit_price_cents: 350,
+      unit_price_cents: 20,
       image_path: "/images/stickers/beam.svg",
       width_mm: 60,
-      height_mm: 60
+      height_mm: 60,
+      category: "general"
     },
     %{
-      name: "Hex",
-      unit_price_cents: 400,
+      name: "Hex (Shiny)",
+      unit_price_cents: 30,
       image_path: "/images/stickers/hex.svg",
       width_mm: 60,
-      height_mm: 60
+      height_mm: 60,
+      category: "general"
     },
     %{
-      name: "Atom",
-      unit_price_cents: 300,
+      name: "Atom Bicus",
+      unit_price_cents: 30,
       image_path: "/images/stickers/atom.svg",
       width_mm: 60,
-      height_mm: 60
+      height_mm: 60,
+      category: "bicus"
     }
   ]
 

@@ -8,6 +8,7 @@ defmodule StickerShop.Orders do
   alias Ecto.Multi
   alias StickerShop.Repo
   alias StickerShop.Catalog
+  alias StickerShop.Catalog.Formats
   alias StickerShop.Catalog.Sticker
   alias StickerShop.Orders.{Order, OrderItem}
 
@@ -98,6 +99,9 @@ defmodule StickerShop.Orders do
         %{
           order_id: order.id,
           sticker_id: item.sticker_id,
+          format: item.format,
+          width_mm: item.width_mm,
+          height_mm: item.height_mm,
           quantity: item.quantity,
           unit_price_cents: item.unit_price_cents,
           inserted_at: now,
@@ -146,15 +150,22 @@ defmodule StickerShop.Orders do
   defp normalize_item(item) when is_map(item) do
     sticker_id = fetch_item_value(item, :sticker_id)
     quantity = fetch_item_value(item, :quantity)
+    raw_format = fetch_item_value(item, :format) || "standard_6x6"
+    format = Formats.get(raw_format)
 
     with {:ok, quantity} <- parse_positive_integer(quantity),
          %Sticker{active: true} = sticker <- Catalog.get_sticker(sticker_id) do
+      unit_price_cents = Formats.price_for(sticker.unit_price_cents, format.id)
+
       {:ok,
        %{
          sticker_id: sticker.id,
+         format: format.id,
+         width_mm: format.width_mm,
+         height_mm: format.height_mm,
          quantity: quantity,
-         unit_price_cents: sticker.unit_price_cents,
-         line_total: quantity * sticker.unit_price_cents
+         unit_price_cents: unit_price_cents,
+         line_total: quantity * unit_price_cents
        }}
     else
       nil -> {:error, :sticker_not_found}

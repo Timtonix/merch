@@ -2,6 +2,7 @@ defmodule StickerShopWeb.ShopLive do
   use StickerShopWeb, :live_view
 
   alias StickerShop.Catalog
+  alias StickerShop.Catalog.Formats
   alias StickerShop.Orders
 
   @max_quantity 99
@@ -9,29 +10,104 @@ defmodule StickerShopWeb.ShopLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    stickers = Catalog.list_active_stickers()
+    all_stickers = Catalog.list_active_stickers()
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Boutique")
-     |> assign(:current_scope, nil)
-     |> assign(:stickers_by_id, Map.new(stickers, &{&1.id, &1}))
-     |> assign(:quantities, %{})
-     |> assign(:cart_lines, [])
-     |> assign(:cart_total_cents, 0)
-     |> assign(:cart_count, 0)
-     |> assign(:placed_order, nil)
-     |> assign(:form, to_form(checkout_changeset(%{}), as: :checkout))
-     |> stream(:stickers, stickers)}
+    socket =
+      socket
+      |> assign(:page_title, "Boutique · Stickers")
+      |> assign(:current_scope, nil)
+      |> assign(:all_stickers, all_stickers)
+      |> assign(:stickers_by_id, Map.new(all_stickers, &{&1.id, &1}))
+      |> assign(:formats, Formats.all())
+      |> assign(:selected_formats, %{})
+      |> assign(:selected_category, "all")
+      |> assign(:unlocked_categories, ["general"])
+      |> assign(:show_password_modal, false)
+      |> assign(:quantities, %{})
+      |> assign(:cart_lines, [])
+      |> assign(:cart_total_cents, 0)
+      |> assign(:cart_count, 0)
+      |> assign(:placed_order, nil)
+      |> assign(:form, to_form(checkout_changeset(%{}), as: :checkout))
+      |> stream(:stickers, filter_stickers(all_stickers, "all", ["general"]))
+
+    {:ok, socket}
   end
 
   @impl true
-  def handle_event("inc", %{"id" => id}, socket) do
-    {:noreply, bump_quantity(socket, id, 1)}
+  def handle_event("filter_category", %{"category" => "bicus"}, socket) do
+    if "bicus" in socket.assigns.unlocked_categories do
+      filtered =
+        filter_stickers(socket.assigns.all_stickers, "bicus", socket.assigns.unlocked_categories)
+
+      {:noreply,
+       socket
+       |> assign(:selected_category, "bicus")
+       |> stream(:stickers, filtered, reset: true)}
+    else
+      {:noreply, assign(socket, :show_password_modal, true)}
+    end
   end
 
-  def handle_event("dec", %{"id" => id}, socket) do
-    {:noreply, bump_quantity(socket, id, -1)}
+  def handle_event("filter_category", %{"category" => category}, socket) do
+    filtered =
+      filter_stickers(socket.assigns.all_stickers, category, socket.assigns.unlocked_categories)
+
+    {:noreply,
+     socket
+     |> assign(:selected_category, category)
+     |> stream(:stickers, filtered, reset: true)}
+  end
+
+  def handle_event("unlock_category", %{"password" => pwd}, socket) do
+    expected_pwd = System.get_env("BICUS_PASSWORD") || "bicus123"
+
+    if String.trim(pwd) == expected_pwd do
+      unlocked = ["bicus" | socket.assigns.unlocked_categories] |> Enum.uniq()
+      filtered = filter_stickers(socket.assigns.all_stickers, "bicus", unlocked)
+
+      {:noreply,
+       socket
+       |> assign(:unlocked_categories, unlocked)
+       |> assign(:selected_category, "bicus")
+       |> assign(:show_password_modal, false)
+       |> stream(:stickers, filtered, reset: true)
+       |> put_flash(:info, "Catégorie Bicus déverrouillée !")}
+    else
+      {:noreply, put_flash(socket, :error, "Mot de passe incorrect.")}
+    end
+  end
+
+  def handle_event("close_password_modal", _params, socket) do
+    {:noreply, assign(socket, :show_password_modal, false)}
+  end
+
+  def handle_event("select_format", %{"id" => raw_id, "format" => format_id}, socket) do
+    with {id, ""} <- Integer.parse(raw_id),
+         %{} = sticker <- Map.get(socket.assigns.stickers_by_id, id) do
+      selected_formats = Map.put(socket.assigns.selected_formats, id, format_id)
+
+      {:noreply,
+       socket
+       |> assign(:selected_formats, selected_formats)
+       |> stream_insert(:stickers, sticker)}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("inc", %{"id" => id} = params, socket) do
+    format =
+      Map.get(params, "format") || selected_format(socket.assigns.selected_formats, parse_id(id))
+
+    {:noreply, bump_quantity(socket, id, format, 1)}
+  end
+
+  def handle_event("dec", %{"id" => id} = params, socket) do
+    format =
+      Map.get(params, "format") || selected_format(socket.assigns.selected_formats, parse_id(id))
+
+    {:noreply, bump_quantity(socket, id, format, -1)}
   end
 
   def handle_event("validate", %{"checkout" => params}, socket) do
@@ -65,21 +141,33 @@ defmodule StickerShopWeb.ShopLive do
 
         items =
           Enum.map(socket.assigns.cart_lines, fn line ->
-            %{sticker_id: line.sticker.id, quantity: line.quantity}
+            %{
+              sticker_id: line.sticker.id,
+              format: line.format.id,
+              quantity: line.quantity
+            }
           end)
 
         case Orders.create_order(attrs, items) do
           {:ok, order} ->
-            stickers = Catalog.list_active_stickers()
+            all_stickers = Catalog.list_active_stickers()
+
+            filtered =
+              filter_stickers(
+                all_stickers,
+                socket.assigns.selected_category,
+                socket.assigns.unlocked_categories
+              )
 
             {:noreply,
              socket
-             |> assign(:stickers_by_id, Map.new(stickers, &{&1.id, &1}))
+             |> assign(:all_stickers, all_stickers)
+             |> assign(:stickers_by_id, Map.new(all_stickers, &{&1.id, &1}))
              |> assign(:quantities, %{})
              |> assign_cart([])
              |> assign(:placed_order, order)
              |> assign(:form, to_form(checkout_changeset(%{}), as: :checkout))
-             |> stream(:stickers, stickers, reset: true)
+             |> stream(:stickers, filtered, reset: true)
              |> put_flash(:info, "Commande ##{order.id} enregistrée. Merci !")}
 
           {:error, %Ecto.Changeset{} = order_changeset} ->
@@ -105,11 +193,30 @@ defmodule StickerShopWeb.ShopLive do
     {:noreply, assign(socket, :placed_order, nil)}
   end
 
-  defp bump_quantity(socket, raw_id, delta) do
+  defp filter_stickers(stickers, category, unlocked_categories) do
+    Enum.filter(stickers, fn sticker ->
+      bicus_allowed = "bicus" in unlocked_categories
+
+      case category do
+        "all" ->
+          sticker.category != "bicus" or bicus_allowed
+
+        "bicus" ->
+          sticker.category == "bicus" and bicus_allowed
+
+        other ->
+          sticker.category == other
+      end
+    end)
+  end
+
+  defp bump_quantity(socket, raw_id, format_id, delta) do
     with {id, ""} <- Integer.parse(raw_id),
          %{} = sticker <- Map.get(socket.assigns.stickers_by_id, id) do
+      key = {id, format_id}
+
       quantities =
-        Map.update(socket.assigns.quantities, id, max(delta, 0), fn qty ->
+        Map.update(socket.assigns.quantities, key, max(delta, 0), fn qty ->
           (qty + delta) |> max(0) |> min(@max_quantity)
         end)
 
@@ -132,17 +239,21 @@ defmodule StickerShopWeb.ShopLive do
 
   defp cart_lines(stickers_by_id, quantities) do
     quantities
-    |> Enum.filter(fn {_id, qty} -> qty > 0 end)
-    |> Enum.map(fn {id, qty} ->
+    |> Enum.filter(fn {_key, qty} -> qty > 0 end)
+    |> Enum.map(fn {{id, format_id}, qty} ->
       sticker = Map.fetch!(stickers_by_id, id)
+      format = Formats.get(format_id)
+      unit_price = Formats.price_for(sticker.unit_price_cents, format.id)
 
       %{
         sticker: sticker,
+        format: format,
         quantity: qty,
-        line_total_cents: qty * sticker.unit_price_cents
+        unit_price_cents: unit_price,
+        line_total_cents: qty * unit_price
       }
     end)
-    |> Enum.sort_by(& &1.sticker.name)
+    |> Enum.sort_by(&{&1.sticker.name, &1.format.id})
   end
 
   defp checkout_changeset(attrs) do
@@ -168,5 +279,24 @@ defmodule StickerShopWeb.ShopLive do
     end
   end
 
-  defp quantity(quantities, sticker_id), do: Map.get(quantities, sticker_id, 0)
+  def selected_format(selected_formats, sticker_id) do
+    Map.get(selected_formats, sticker_id, Formats.default_id())
+  end
+
+  def quantity(quantities, sticker_id, format_id) do
+    Map.get(quantities, {sticker_id, format_id}, 0)
+  end
+
+  def quantity(quantities, sticker_id) do
+    quantity(quantities, sticker_id, Formats.default_id())
+  end
+
+  defp parse_id(id) when is_integer(id), do: id
+
+  defp parse_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {int, ""} -> int
+      _ -> 0
+    end
+  end
 end

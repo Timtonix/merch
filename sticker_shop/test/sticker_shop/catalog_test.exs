@@ -73,5 +73,87 @@ defmodule StickerShop.CatalogTest do
       assert {:ok, _} = Catalog.delete_sticker(sticker)
       assert Catalog.get_sticker(sticker.id) == nil
     end
+
+    test "supports category assignment and filtering" do
+      {:ok, general} =
+        Catalog.create_sticker(
+          Map.merge(@valid_attrs, %{name: "Général Sticker", category: "general"})
+        )
+
+      {:ok, bicus} =
+        Catalog.create_sticker(
+          Map.merge(@valid_attrs, %{name: "Bicus Sticker", category: "bicus"})
+        )
+
+      all_active = Catalog.list_active_stickers()
+      assert general in all_active
+      assert bicus in all_active
+
+      general_only = Catalog.list_active_stickers(category: "general")
+      assert general in general_only
+      refute bicus in general_only
+
+      bicus_only = Catalog.list_active_stickers(category: "bicus")
+      assert bicus in bicus_only
+      refute general in bicus_only
+
+      categories = Catalog.list_categories()
+      assert "general" in categories
+      assert "bicus" in categories
+    end
+  end
+
+  describe "formats" do
+    alias StickerShop.Catalog.Formats
+
+    test "calculates correct price according to base price and format" do
+      # Base 20c (classique)
+      assert Formats.price_for(20, "standard_6x6") == 20
+      assert Formats.price_for(20, "medium_10x10") == 50
+      assert Formats.price_for(20, "large_14x14") == 100
+      assert Formats.price_for(20, "poster_a4") == 250
+
+      # Base 30c (shiny)
+      assert Formats.price_for(30, "standard_6x6") == 30
+      assert Formats.price_for(30, "medium_10x10") == 70
+      assert Formats.price_for(30, "large_14x14") == 130
+      assert Formats.price_for(30, "poster_a4") == 250
+    end
+  end
+
+  describe "image_optimizer" do
+    alias StickerShop.Catalog.ImageOptimizer
+
+    test "optimizes a large PNG down to max dimensions" do
+      tmp_src = Path.join(System.tmp_dir!(), "test_large.png")
+      tmp_dst = Path.join(System.tmp_dir!(), "test_optimized.png")
+
+      # Crée une image 2000x2000
+      {:ok, img} = Image.new(2000, 2000, color: :blue)
+      Image.write(img, tmp_src)
+
+      assert {:ok, ^tmp_dst} = ImageOptimizer.optimize(tmp_src, tmp_dst, max_dimension: 800)
+      assert File.exists?(tmp_dst)
+
+      {:ok, opt_img} = Image.open(tmp_dst)
+      {w, h, _} = Image.shape(opt_img)
+      assert w <= 800
+      assert h <= 800
+
+      File.rm(tmp_src)
+      File.rm(tmp_dst)
+    end
+
+    test "preserves SVG files without modification" do
+      tmp_svg_src = Path.join(System.tmp_dir!(), "test.svg")
+      tmp_svg_dst = Path.join(System.tmp_dir!(), "test_out.svg")
+
+      File.write!(tmp_svg_src, "<svg viewBox='0 0 10 10'><circle cx='5' cy='5' r='5'/></svg>")
+      assert {:ok, ^tmp_svg_dst} = ImageOptimizer.optimize(tmp_svg_src, tmp_svg_dst)
+      assert File.read!(tmp_svg_dst) == File.read!(tmp_svg_src)
+
+      File.rm(tmp_svg_src)
+      File.rm(tmp_svg_dst)
+    end
   end
 end

@@ -31,7 +31,9 @@ sticker_shop-*.tar
 # Ignore digested assets cache.
 /priv/static/cache_manifest.json
 
-# In case you use Node.js/npm, you want to ignore these.
-npm-debug.log
-/assets/node_modules/
+# Ignore uploaded user files
+/priv/static/uploads/*
+!/priv/static/uploads/.gitkeep
+/priv/static/uploads/stickers/*
+!/priv/static/uploads/stickers/.gitkeep
 

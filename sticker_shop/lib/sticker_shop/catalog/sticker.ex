@@ -12,6 +12,7 @@ defmodule StickerShop.Catalog.Sticker do
     field :image_path, :string
     field :width_mm, :integer
     field :height_mm, :integer
+    field :category, :string, default: "general"
     field :active, :boolean, default: true
 
     has_many :order_items, StickerShop.Orders.OrderItem
@@ -22,9 +23,18 @@ defmodule StickerShop.Catalog.Sticker do
   @doc false
   def changeset(sticker, attrs) do
     sticker
-    |> cast(attrs, [:name, :unit_price_cents, :image_path, :width_mm, :height_mm, :active])
+    |> cast(attrs, [
+      :name,
+      :unit_price_cents,
+      :image_path,
+      :width_mm,
+      :height_mm,
+      :category,
+      :active
+    ])
     |> validate_required([:name, :unit_price_cents, :image_path, :width_mm, :height_mm])
     |> validate_length(:name, min: 1, max: 120)
+    |> validate_length(:category, min: 1, max: 60)
     |> validate_number(:unit_price_cents, greater_than: 0)
     |> validate_number(:width_mm, greater_than: 0)
     |> validate_number(:height_mm, greater_than: 0)

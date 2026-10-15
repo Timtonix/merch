@@ -96,6 +96,115 @@ defmodule StickerShop.Printing.SheetPackerTest do
     assert page2.items_count == 3
   end
 
+  test "pack_orders/2 allocates a dedicated page for poster_a4 format", %{sticker_a: sticker_a} do
+    order = %Order{
+      id: 201,
+      customer_name: "Charlie",
+      order_items: [
+        %OrderItem{
+          quantity: 2,
+          sticker: sticker_a,
+          format: "poster_a4",
+          width_mm: 190,
+          height_mm: 270
+        }
+      ]
+    }
+
+    packed = SheetPacker.pack_orders([order])
+
+    assert packed.total_items == 2
+    assert packed.total_pages == 2
+    assert length(packed.pages) == 2
+
+    for page <- packed.pages do
+      assert page.layout_type == :poster_a4
+      assert page.items_count == 1
+      [item] = page.items
+      assert item.width_mm == 190.0
+      assert item.height_mm == 270.0
+      assert item.format == "poster_a4"
+    end
+  end
+
+  test "pack_orders/2 packs large 14x14 with up to 8 standard 6x6 stickers on the same page", %{
+    sticker_a: sticker_a,
+    sticker_b: sticker_b
+  } do
+    # 1 grand 14x14 + 10 standards 6x6
+    order = %Order{
+      id: 202,
+      customer_name: "Dana",
+      order_items: [
+        %OrderItem{
+          quantity: 1,
+          sticker: sticker_a,
+          format: "large_14x14",
+          width_mm: 140,
+          height_mm: 140
+        },
+        %OrderItem{
+          quantity: 10,
+          sticker: sticker_b,
+          format: "standard_6x6",
+          width_mm: 60,
+          height_mm: 60
+        }
+      ]
+    }
+
+    packed = SheetPacker.pack_orders([order])
+
+    assert packed.total_items == 11
+    assert packed.total_pages == 2
+
+    [page1, page2] = packed.pages
+
+    # Page 1 : 1 grand 14x14 + 8 standards 6x6 = 9 items
+    assert page1.layout_type == :mixed_large
+    assert page1.items_count == 9
+
+    large_item = Enum.find(page1.items, &(&1.format == "large_14x14"))
+    assert large_item.width_mm == 140.0
+    assert large_item.height_mm == 140.0
+
+    standard_items_p1 = Enum.filter(page1.items, &(&1.format == "standard_6x6"))
+    assert length(standard_items_p1) == 8
+
+    # Page 2 : les 2 standards restants
+    assert page2.layout_type == :standard_6x6
+    assert page2.items_count == 2
+  end
+
+  test "pack_orders/2 packs medium 10x10 stickers in a 2x2 grid (up to 4 per page)", %{
+    sticker_a: sticker_a
+  } do
+    order = %Order{
+      id: 203,
+      customer_name: "Evan",
+      order_items: [
+        %OrderItem{
+          quantity: 5,
+          sticker: sticker_a,
+          format: "medium_10x10",
+          width_mm: 100,
+          height_mm: 100
+        }
+      ]
+    }
+
+    packed = SheetPacker.pack_orders([order])
+
+    assert packed.total_items == 5
+    assert packed.total_pages == 2
+
+    [page1, page2] = packed.pages
+    assert page1.layout_type == :medium_10x10
+    assert page1.items_count == 4
+    assert page2.layout_type == :medium_10x10
+    assert page2.items_count == 1
+  end
+
   test "estimate_pages/2 calculates page counts correctly" do
     assert SheetPacker.estimate_pages(0) == 0
     assert SheetPacker.estimate_pages(1) == 1

@@ -135,6 +135,65 @@ defmodule StickerShopWeb.Admin.OrderLiveTest do
     assert new_sticker.unit_price_cents == 450
     assert new_sticker.width_mm == 60
     assert new_sticker.height_mm == 60
+    assert new_sticker.category == "general"
     assert String.starts_with?(new_sticker.image_path, "/uploads/stickers/")
+  end
+
+  test "uploads a bicus sticker and displays category badge", %{conn: conn} do
+    conn = admin_conn(conn)
+    {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view |> element("#tab-stickers-btn") |> render_click()
+
+    image =
+      file_input(view, "#new-sticker-form", :sticker_image, [
+        %{
+          name: "visage_team.png",
+          content: <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13>>,
+          type: "image/png"
+        }
+      ])
+
+    render_upload(image, "visage_team.png")
+
+    view
+    |> form("#new-sticker-form",
+      new_sticker: %{
+        "name" => "Visage Equipe",
+        "category" => "bicus",
+        "price_euros" => "0.30",
+        "width_mm" => "60",
+        "height_mm" => "60"
+      }
+    )
+    |> render_submit()
+
+    assert render(view) =~ "Visage Equipe"
+    assert render(view) =~ "Bicus 🔒"
+
+    assert [new_sticker] =
+             Catalog.list_stickers() |> Enum.filter(&(&1.name == "Visage Equipe"))
+
+    assert new_sticker.category == "bicus"
+  end
+
+  test "updates category on existing sticker after import", %{conn: conn, sticker: sticker} do
+    conn = admin_conn(conn)
+    {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view |> element("#tab-stickers-btn") |> render_click()
+
+    # Le sticker est initialement en catégorie general
+    assert Catalog.get_sticker!(sticker.id).category == "general"
+
+    # Passage en Bicus
+    view |> element("#sticker-#{sticker.id}-cat-bicus") |> render_click()
+    assert Catalog.get_sticker!(sticker.id).category == "bicus"
+    assert render(view) =~ "Catégorie de « #{sticker.name} » mise à jour : Bicus 🔒."
+
+    # Retour en Général
+    view |> element("#sticker-#{sticker.id}-cat-general") |> render_click()
+    assert Catalog.get_sticker!(sticker.id).category == "general"
+    assert render(view) =~ "Catégorie de « #{sticker.name} » mise à jour : Général."
   end
 end
