@@ -97,6 +97,11 @@ defmodule StickerShopWeb.Admin.OrderLiveTest do
     assert Orders.get_order!(order1.id).status == :printed
   end
 
+  @valid_png_binary <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,
+                      0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 10, 73, 68, 65, 84, 120,
+                      156, 99, 0, 1, 0, 0, 5, 0, 1, 13, 10, 45, 180, 0, 0, 0, 0, 73, 69, 78, 68,
+                      174, 66, 96, 130>>
+
   test "uploads a new sticker and adds it to the catalog", %{conn: conn} do
     conn = admin_conn(conn)
     {:ok, view, _html} = live(conn, ~p"/admin")
@@ -107,7 +112,7 @@ defmodule StickerShopWeb.Admin.OrderLiveTest do
       file_input(view, "#new-sticker-form", :sticker_image, [
         %{
           name: "logo_community.png",
-          content: <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13>>,
+          content: @valid_png_binary,
           type: "image/png"
         }
       ])
@@ -149,7 +154,7 @@ defmodule StickerShopWeb.Admin.OrderLiveTest do
       file_input(view, "#new-sticker-form", :sticker_image, [
         %{
           name: "visage_team.png",
-          content: <<137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13>>,
+          content: @valid_png_binary,
           type: "image/png"
         }
       ])
@@ -195,5 +200,48 @@ defmodule StickerShopWeb.Admin.OrderLiveTest do
     view |> element("#sticker-#{sticker.id}-cat-general") |> render_click()
     assert Catalog.get_sticker!(sticker.id).category == "general"
     assert render(view) =~ "Catégorie de « #{sticker.name} » mise à jour : Général."
+  end
+
+  test "deletes a sticker and removes its image from disk", %{conn: conn} do
+    conn = admin_conn(conn)
+    {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view |> element("#tab-stickers-btn") |> render_click()
+
+    image =
+      file_input(view, "#new-sticker-form", :sticker_image, [
+        %{
+          name: "to_delete.png",
+          content: @valid_png_binary,
+          type: "image/png"
+        }
+      ])
+
+    render_upload(image, "to_delete.png")
+
+    view
+    |> form("#new-sticker-form",
+      new_sticker: %{
+        "name" => "Sticker To Delete",
+        "price_euros" => "0.20",
+        "width_mm" => "60",
+        "height_mm" => "60"
+      }
+    )
+    |> render_submit()
+
+    assert [created] =
+             Catalog.list_stickers() |> Enum.filter(&(&1.name == "Sticker To Delete"))
+
+    source_path =
+      Path.expand(Path.join("priv/static/uploads/stickers", Path.basename(created.image_path)))
+
+    assert File.exists?(source_path)
+
+    view |> element("#delete-sticker-#{created.id}") |> render_click()
+
+    assert render(view) =~ "Sticker supprimé du catalogue."
+    assert is_nil(Catalog.get_sticker(created.id))
+    refute File.exists?(source_path)
   end
 end

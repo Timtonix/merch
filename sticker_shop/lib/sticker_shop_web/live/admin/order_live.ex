@@ -2,7 +2,6 @@ defmodule StickerShopWeb.Admin.OrderLive do
   use StickerShopWeb, :live_view
 
   alias StickerShop.Catalog
-  alias StickerShop.Catalog.ImageOptimizer
   alias StickerShop.Orders
   alias StickerShop.Printing.SheetPacker
 
@@ -115,9 +114,11 @@ defmodule StickerShopWeb.Admin.OrderLive do
 
   def handle_event("delete_sticker", %{"id" => id}, socket) do
     with {sticker_id, ""} <- Integer.parse(id),
-         sticker <- Catalog.get_sticker(sticker_id) do
+         sticker when not is_nil(sticker) <- Catalog.get_sticker(sticker_id) do
       case Catalog.delete_sticker(sticker) do
-        {:ok, _} ->
+        {:ok, deleted_sticker} ->
+          remove_uploaded_file(deleted_sticker.image_path)
+
           {:noreply,
            socket
            |> put_flash(:info, "Sticker supprimé du catalogue.")
@@ -171,19 +172,15 @@ defmodule StickerShopWeb.Admin.OrderLive do
         clean_ext = if ext in ~w(.svg .png .jpg .jpeg .webp), do: ext, else: ".png"
         filename = "sticker_#{timestamp}_#{random_suffix}#{clean_ext}"
 
-        # 1. Dossier source pour persistance au-delà des recompilations
-        source_dir = Path.expand("priv/static/uploads/stickers")
-        File.mkdir_p!(source_dir)
-        source_target = Path.join(source_dir, filename)
-
-        # 2. Dossier build pour service immédiat par Plug.Static
+        # 1. Dossier build pour service immédiat par Plug.Static
         build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
         File.mkdir_p!(build_dir)
-        build_target = Path.join(build_dir, filename)
+        File.cp!(path, Path.join(build_dir, filename))
 
-        # Optimisation automatique 300 DPI (sans perte de netteté)
-        ImageOptimizer.optimize(path, source_target)
-        File.cp!(source_target, build_target)
+        # 2. Dossier source pour persistance au-delà des recompilations
+        source_dir = Path.expand("priv/static/uploads/stickers")
+        File.mkdir_p!(source_dir)
+        File.cp!(path, Path.join(source_dir, filename))
 
         {:ok, "/uploads/stickers/#{filename}"}
       end)
@@ -220,6 +217,8 @@ defmodule StickerShopWeb.Admin.OrderLive do
            |> assign_new_sticker_form(%{})}
 
         {:error, changeset} ->
+          remove_uploaded_file(image_path)
+
           {:noreply,
            socket
            |> put_flash(
@@ -236,18 +235,37 @@ defmodule StickerShopWeb.Admin.OrderLive do
          |> assign_new_sticker_form(params)}
 
       {:error, reason} ->
+        remove_uploaded_file(image_path)
+
         {:noreply,
          socket
          |> put_flash(:error, reason)
          |> assign_new_sticker_form(params)}
 
       _ ->
+        remove_uploaded_file(image_path)
+
         {:noreply,
          socket
          |> put_flash(:error, "Vérifie les informations saisies (nom, prix et dimensions).")
          |> assign_new_sticker_form(params)}
     end
   end
+
+  defp remove_uploaded_file(image_path) when is_binary(image_path) do
+    if String.starts_with?(image_path, "/uploads/stickers/") do
+      filename = Path.basename(image_path)
+      source_target = Path.expand(Path.join("priv/static/uploads/stickers", filename))
+
+      build_target =
+        Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers", filename])
+
+      File.rm(source_target)
+      File.rm(build_target)
+    end
+  end
+
+  defp remove_uploaded_file(_), do: :ok
 
   defp assign_new_sticker_form(socket, params) do
     default_params = %{
