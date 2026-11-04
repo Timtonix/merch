@@ -99,9 +99,10 @@ COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/sticker_shop 
 
 # Prepare persistent /app/uploads directory and link priv/static/uploads to it
 RUN mkdir -p /app/uploads/stickers /app/priv/static \
-  && rm -rf /app/lib/sticker_shop-*/priv/static/uploads \
-  && ln -s /app/uploads /app/lib/sticker_shop-*/priv/static/uploads \
-  && ln -s /app/uploads /app/priv/static/uploads \
+  && for dir in /app/lib/sticker_shop-*/priv/static; do \
+       rm -rf "$dir/uploads" && ln -s /app/uploads "$dir/uploads"; \
+     done \
+  && ln -sfn /app/uploads /app/priv/static/uploads \
   && chown -R nobody:root /app/uploads /app/priv /app/lib/sticker_shop-*/priv/static
 
 USER nobody
