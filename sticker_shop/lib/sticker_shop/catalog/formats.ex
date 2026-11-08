@@ -7,6 +7,7 @@ defmodule StickerShop.Catalog.Formats do
     %{
       id: "standard_6x6",
       label: "Standard",
+      short_label: "Standard",
       dimensions_label: "6×6 cm",
       width_mm: 60,
       height_mm: 60,
@@ -15,6 +16,7 @@ defmodule StickerShop.Catalog.Formats do
     %{
       id: "medium_10x10",
       label: "Moyen",
+      short_label: "Moyen",
       dimensions_label: "10×10 cm",
       width_mm: 100,
       height_mm: 100,
@@ -23,6 +25,7 @@ defmodule StickerShop.Catalog.Formats do
     %{
       id: "large_14x14",
       label: "Grand",
+      short_label: "Grand",
       dimensions_label: "14×14 cm",
       width_mm: 140,
       height_mm: 140,
@@ -31,6 +34,7 @@ defmodule StickerShop.Catalog.Formats do
     %{
       id: "poster_a4",
       label: "Pleine Page A4",
+      short_label: "Poster A4",
       dimensions_label: "19×27 cm",
       width_mm: 190,
       height_mm: 270,

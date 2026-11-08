@@ -192,4 +192,74 @@ defmodule StickerShopWeb.ShopLiveTest do
     assert has_element?(view, "#cart-empty")
     assert Orders.list_orders() == []
   end
+
+  test "filters stickers via search input and clears search", %{
+    conn: conn,
+    phoenix: phoenix,
+    hex: hex
+  } do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> form("#sticker-search-form", %{"query" => "Phoe"})
+    |> render_change()
+
+    assert has_element?(view, "#sticker-inc-#{phoenix.id}")
+    refute has_element?(view, "#sticker-inc-#{hex.id}")
+
+    view |> element("#clear-search-btn") |> render_click()
+
+    assert has_element?(view, "#sticker-inc-#{phoenix.id}")
+    assert has_element?(view, "#sticker-inc-#{hex.id}")
+  end
+
+  test "removes a cart line directly from the cart sidebar and opens preview modal", %{
+    conn: conn,
+    phoenix: phoenix
+  } do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    # Add 2 Phoenix stickers
+    view |> element("#sticker-inc-#{phoenix.id}") |> render_click()
+    view |> element("#sticker-inc-#{phoenix.id}") |> render_click()
+    assert has_element?(view, "#cart-count", "2")
+
+    # Remove line from cart
+    view |> element("#cart-remove-#{phoenix.id}-standard_6x6") |> render_click()
+    assert has_element?(view, "#cart-empty")
+    assert has_element?(view, "#cart-count", "0")
+
+    # Open preview modal and close it
+    view |> element("#sticker-zoom-#{phoenix.id}") |> render_click()
+    assert has_element?(view, "#sticker-preview-modal")
+    view |> element("#close-preview-modal-btn") |> render_click()
+    refute has_element?(view, "#sticker-preview-modal")
+  end
+
+  test "saves payment method preference and custom notes on order", %{
+    conn: conn,
+    phoenix: phoenix
+  } do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view |> element("#sticker-inc-#{phoenix.id}") |> render_click()
+
+    view
+    |> form("#checkout-form",
+      checkout: %{
+        first_name: "Marie",
+        last_name: "Curie",
+        email: "marie@example.com",
+        payment_method: "rib",
+        notes: "Dispo vendredi midi"
+      }
+    )
+    |> render_submit()
+
+    assert has_element?(view, "#order-confirmation")
+    assert has_element?(view, "#payment-methods-box")
+
+    assert [order] = Orders.list_orders()
+    assert order.notes == "Paiement prévu : Virement (RIB demandé) · Dispo vendredi midi"
+  end
 end

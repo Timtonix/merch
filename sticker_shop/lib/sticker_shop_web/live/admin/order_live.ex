@@ -2,7 +2,10 @@ defmodule StickerShopWeb.Admin.OrderLive do
   use StickerShopWeb, :live_view
 
   alias StickerShop.Catalog
+  alias StickerShop.Catalog.Formats
+  alias StickerShop.Catalog.ImageOptimizer
   alias StickerShop.Orders
+  alias StickerShop.Orders.OrderNotifier
   alias StickerShop.Printing.SheetPacker
 
   @default_slot_size 60
@@ -67,13 +70,50 @@ defmodule StickerShopWeb.Admin.OrderLive do
          status_atom when status_atom in [:pending, :confirmed, :printed, :fulfilled, :cancelled] <-
            String.to_existing_atom(status),
          {:ok, _updated} <- Orders.update_order_status(order, status_atom) do
+      extra_msg =
+        if status_atom == :printed and order.status != :printed do
+          " (email d'impression envoyé à #{order.customer_email})"
+        else
+          ""
+        end
+
       {:noreply,
        socket
-       |> put_flash(:info, "Statut de la commande ##{order_id} mis à jour : #{status_atom}.")
+       |> put_flash(
+         :info,
+         "Statut de la commande ##{order_id} mis à jour : #{status_atom}#{extra_msg}."
+       )
        |> refresh_all()}
     else
       _ ->
         {:noreply, put_flash(socket, :error, "Impossible de mettre à jour le statut.")}
+    end
+  end
+
+  def handle_event("resend_email", %{"order_id" => id, "type" => type}, socket) do
+    with {order_id, ""} <- Integer.parse(id),
+         order when not is_nil(order) <- Enum.find(socket.assigns.orders, &(&1.id == order_id)) do
+      result =
+        case type do
+          "printed" -> OrderNotifier.deliver_order_printed(order)
+          _ -> OrderNotifier.deliver_order_confirmation(order)
+        end
+
+      case result do
+        {:ok, _} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :info,
+             "Email (#{type}) renvoyé à #{order.customer_email} pour la commande ##{order.id}."
+           )}
+
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Erreur lors de l'envoi de l'email.")}
+      end
+    else
+      _ ->
+        {:noreply, put_flash(socket, :error, "Commande introuvable.")}
     end
   end
 
@@ -91,7 +131,10 @@ defmodule StickerShopWeb.Admin.OrderLive do
 
         {:noreply,
          socket
-         |> put_flash(:info, "#{count} commande(s) marquée(s) comme imprimée(s).")
+         |> put_flash(
+           :info,
+           "#{count} commande(s) marquée(s) comme imprimée(s) et notification(s) email envoyée(s)."
+         )
          |> refresh_all()}
     end
   end
@@ -172,15 +215,16 @@ defmodule StickerShopWeb.Admin.OrderLive do
         clean_ext = if ext in ~w(.svg .png .jpg .jpeg .webp), do: ext, else: ".png"
         filename = "sticker_#{timestamp}_#{random_suffix}#{clean_ext}"
 
-        # 1. Dossier build pour service immédiat par Plug.Static
-        build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
-        File.mkdir_p!(build_dir)
-        File.cp!(path, Path.join(build_dir, filename))
-
-        # 2. Dossier source pour persistance au-delà des recompilations
+        # 1. Dossier source pour persistance au-delà des recompilations
         source_dir = Path.expand("priv/static/uploads/stickers")
         File.mkdir_p!(source_dir)
-        File.cp!(path, Path.join(source_dir, filename))
+        source_target = Path.join(source_dir, filename)
+        ImageOptimizer.optimize(path, source_target)
+
+        # 2. Dossier build pour service immédiat par Plug.Static
+        build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
+        File.mkdir_p!(build_dir)
+        File.cp!(source_target, Path.join(build_dir, filename))
 
         {:ok, "/uploads/stickers/#{filename}"}
       end)
@@ -252,6 +296,18 @@ defmodule StickerShopWeb.Admin.OrderLive do
     end
   end
 
+  def format_label(format_id) do
+    format = Formats.get(format_id)
+    "#{Map.get(format, :short_label, format.label)} (#{format.dimensions_label})"
+  end
+
+  def status_label(:pending), do: "En attente"
+  def status_label(:confirmed), do: "Confirmée"
+  def status_label(:printed), do: "Imprimée"
+  def status_label(:fulfilled), do: "Livrée"
+  def status_label(:cancelled), do: "Annulée"
+  def status_label(other), do: to_string(other)
+
   defp remove_uploaded_file(image_path) when is_binary(image_path) do
     if String.starts_with?(image_path, "/uploads/stickers/") do
       filename = Path.basename(image_path)
@@ -284,12 +340,16 @@ defmodule StickerShopWeb.Admin.OrderLive do
     all_orders = Orders.list_orders()
     pending_orders = Enum.filter(all_orders, &(&1.status == :pending))
     printed_orders = Enum.filter(all_orders, &(&1.status == :printed))
+    fulfilled_orders = Enum.filter(all_orders, &(&1.status == :fulfilled))
+    cancelled_orders = Enum.filter(all_orders, &(&1.status == :cancelled))
     pending_stickers_count = Orders.count_stickers_in_orders(pending_orders)
 
     socket
     |> assign(:all_orders_count, length(all_orders))
     |> assign(:pending_orders_count, length(pending_orders))
     |> assign(:printed_orders_count, length(printed_orders))
+    |> assign(:fulfilled_orders_count, length(fulfilled_orders))
+    |> assign(:cancelled_orders_count, length(cancelled_orders))
     |> assign(:pending_stickers_count, pending_stickers_count)
     |> assign(:estimated_pages, SheetPacker.estimate_pages(pending_stickers_count))
   end

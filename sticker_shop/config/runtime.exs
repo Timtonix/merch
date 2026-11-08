@@ -23,6 +23,17 @@ end
 config :sticker_shop, StickerShopWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+config :sticker_shop, :order_notifications,
+  from_name: System.get_env("MAILER_FROM_NAME", "Atelier Stickers"),
+  from_email: System.get_env("MAILER_FROM_EMAIL", "commandes@stickers.local"),
+  reply_to: System.get_env("MAILER_REPLY_TO"),
+  wero_phone: System.get_env("PAYMENT_WERO_PHONE"),
+  pickup_instructions:
+    System.get_env(
+      "PICKUP_INSTRUCTIONS",
+      "Tes stickers sont prêts à l'atelier ! Contacte-moi ou passe me voir pour les récupérer."
+    )
+
 if config_env() == :dev do
   # Reload browser tabs when matching files change.
   config :sticker_shop, StickerShopWeb.Endpoint,
@@ -119,19 +130,36 @@ if config_env() == :prod do
 
   # ## Configuring the mailer
   #
-  # In production you need to configure the mailer to use a different adapter.
-  # Here is an example configuration for Mailgun:
-  #
-  #     config :sticker_shop, StickerShop.Mailer,
-  #       adapter: Swoosh.Adapters.Mailgun,
-  #       api_key: System.get_env("MAILGUN_API_KEY"),
-  #       domain: System.get_env("MAILGUN_DOMAIN")
-  #
-  # Most non-SMTP adapters require an API client. Swoosh supports Req, Hackney,
-  # and Finch out-of-the-box. This configuration is typically done at
-  # compile-time in your config/prod.exs:
-  #
-  #     config :swoosh, :api_client, Swoosh.ApiClient.Req
-  #
-  # See https://swoosh.hexdocs.pm/Swoosh.html#module-installation for details.
+  # In production, if SMTP_HOST is configured, we use Swoosh.Adapters.SMTP.
+  if smtp_host = System.get_env("SMTP_HOST") do
+    smtp_port = String.to_integer(System.get_env("SMTP_PORT", "587"))
+    smtp_user = System.get_env("SMTP_USER")
+    smtp_password = System.get_env("SMTP_PASSWORD")
+
+    auth_mode =
+      if is_binary(smtp_user) and smtp_user != "" do
+        :always
+      else
+        :never
+      end
+
+    tls_mode =
+      case System.get_env("SMTP_TLS") do
+        "never" -> :never
+        "always" -> :always
+        _ -> :if_available
+      end
+
+    ssl_enabled = System.get_env("SMTP_SSL") in ~w(true 1) or smtp_port == 465
+
+    config :sticker_shop, StickerShop.Mailer,
+      adapter: Swoosh.Adapters.SMTP,
+      relay: smtp_host,
+      port: smtp_port,
+      username: smtp_user,
+      password: smtp_password,
+      ssl: ssl_enabled,
+      tls: tls_mode,
+      auth: auth_mode
+  end
 end

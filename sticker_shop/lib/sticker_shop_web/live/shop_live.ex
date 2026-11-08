@@ -4,9 +4,16 @@ defmodule StickerShopWeb.ShopLive do
   alias StickerShop.Catalog
   alias StickerShop.Catalog.Formats
   alias StickerShop.Orders
+  alias StickerShop.Orders.OrderNotifier
 
   @max_quantity 99
-  @checkout_types %{first_name: :string, last_name: :string, email: :string}
+  @checkout_types %{
+    first_name: :string,
+    last_name: :string,
+    email: :string,
+    payment_method: :string,
+    notes: :string
+  }
 
   @impl true
   def mount(_params, _session, socket) do
@@ -21,15 +28,18 @@ defmodule StickerShopWeb.ShopLive do
       |> assign(:formats, Formats.all())
       |> assign(:selected_formats, %{})
       |> assign(:selected_category, "all")
+      |> assign(:search_query, "")
       |> assign(:unlocked_categories, ["general"])
       |> assign(:show_password_modal, false)
+      |> assign(:preview_sticker, nil)
       |> assign(:quantities, %{})
       |> assign(:cart_lines, [])
       |> assign(:cart_total_cents, 0)
       |> assign(:cart_count, 0)
       |> assign(:placed_order, nil)
+      |> assign(:payment_info, OrderNotifier.config_info())
       |> assign(:form, to_form(checkout_changeset(%{}), as: :checkout))
-      |> stream(:stickers, filter_stickers(all_stickers, "all", ["general"]))
+      |> stream(:stickers, filter_stickers(all_stickers, "all", ["general"], ""))
 
     {:ok, socket}
   end
@@ -38,7 +48,12 @@ defmodule StickerShopWeb.ShopLive do
   def handle_event("filter_category", %{"category" => "bicus"}, socket) do
     if "bicus" in socket.assigns.unlocked_categories do
       filtered =
-        filter_stickers(socket.assigns.all_stickers, "bicus", socket.assigns.unlocked_categories)
+        filter_stickers(
+          socket.assigns.all_stickers,
+          "bicus",
+          socket.assigns.unlocked_categories,
+          socket.assigns.search_query
+        )
 
       {:noreply,
        socket
@@ -51,7 +66,12 @@ defmodule StickerShopWeb.ShopLive do
 
   def handle_event("filter_category", %{"category" => category}, socket) do
     filtered =
-      filter_stickers(socket.assigns.all_stickers, category, socket.assigns.unlocked_categories)
+      filter_stickers(
+        socket.assigns.all_stickers,
+        category,
+        socket.assigns.unlocked_categories,
+        socket.assigns.search_query
+      )
 
     {:noreply,
      socket
@@ -59,12 +79,65 @@ defmodule StickerShopWeb.ShopLive do
      |> stream(:stickers, filtered, reset: true)}
   end
 
+  def handle_event("search", %{"query" => query}, socket) do
+    trimmed = String.trim(query)
+
+    filtered =
+      filter_stickers(
+        socket.assigns.all_stickers,
+        socket.assigns.selected_category,
+        socket.assigns.unlocked_categories,
+        trimmed
+      )
+
+    {:noreply,
+     socket
+     |> assign(:search_query, query)
+     |> stream(:stickers, filtered, reset: true)}
+  end
+
+  def handle_event("clear_search", _params, socket) do
+    filtered =
+      filter_stickers(
+        socket.assigns.all_stickers,
+        socket.assigns.selected_category,
+        socket.assigns.unlocked_categories,
+        ""
+      )
+
+    {:noreply,
+     socket
+     |> assign(:search_query, "")
+     |> stream(:stickers, filtered, reset: true)}
+  end
+
+  def handle_event("open_preview", %{"id" => raw_id}, socket) do
+    case Integer.parse(raw_id) do
+      {id, ""} ->
+        {:noreply, assign(socket, :preview_sticker, Map.get(socket.assigns.stickers_by_id, id))}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("close_preview", _params, socket) do
+    {:noreply, assign(socket, :preview_sticker, nil)}
+  end
+
   def handle_event("unlock_category", %{"password" => pwd}, socket) do
     expected_pwd = System.get_env("BICUS_PASSWORD") || "bicus123"
 
     if String.trim(pwd) == expected_pwd do
       unlocked = ["bicus" | socket.assigns.unlocked_categories] |> Enum.uniq()
-      filtered = filter_stickers(socket.assigns.all_stickers, "bicus", unlocked)
+
+      filtered =
+        filter_stickers(
+          socket.assigns.all_stickers,
+          "bicus",
+          unlocked,
+          socket.assigns.search_query
+        )
 
       {:noreply,
        socket
@@ -110,6 +183,21 @@ defmodule StickerShopWeb.ShopLive do
     {:noreply, bump_quantity(socket, id, format, -1)}
   end
 
+  def handle_event("remove_line", %{"id" => raw_id, "format" => format_id}, socket) do
+    with {id, ""} <- Integer.parse(raw_id),
+         %{} = sticker <- Map.get(socket.assigns.stickers_by_id, id) do
+      quantities = Map.delete(socket.assigns.quantities, {id, format_id})
+
+      {:noreply,
+       socket
+       |> assign(:quantities, quantities)
+       |> assign_cart(cart_lines(socket.assigns.stickers_by_id, quantities))
+       |> stream_insert(:stickers, sticker)}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
   def handle_event("validate", %{"checkout" => params}, socket) do
     form =
       params
@@ -136,7 +224,8 @@ defmodule StickerShopWeb.ShopLive do
 
         attrs = %{
           customer_name: "#{String.trim(checkout.first_name)} #{String.trim(checkout.last_name)}",
-          customer_email: String.trim(checkout.email)
+          customer_email: String.trim(checkout.email),
+          notes: build_order_notes(checkout)
         }
 
         items =
@@ -156,7 +245,8 @@ defmodule StickerShopWeb.ShopLive do
               filter_stickers(
                 all_stickers,
                 socket.assigns.selected_category,
-                socket.assigns.unlocked_categories
+                socket.assigns.unlocked_categories,
+                socket.assigns.search_query
               )
 
             {:noreply,
@@ -168,7 +258,10 @@ defmodule StickerShopWeb.ShopLive do
              |> assign(:placed_order, order)
              |> assign(:form, to_form(checkout_changeset(%{}), as: :checkout))
              |> stream(:stickers, filtered, reset: true)
-             |> put_flash(:info, "Commande ##{order.id} enregistrée. Merci !")}
+             |> put_flash(
+               :info,
+               "Commande ##{order.id} enregistrée ! Un email récapitulatif t'a été envoyé."
+             )}
 
           {:error, %Ecto.Changeset{} = order_changeset} ->
             {:noreply,
@@ -193,20 +286,33 @@ defmodule StickerShopWeb.ShopLive do
     {:noreply, assign(socket, :placed_order, nil)}
   end
 
-  defp filter_stickers(stickers, category, unlocked_categories) do
+  defp filter_stickers(stickers, category, unlocked_categories, search_query) do
+    normalized_query =
+      search_query
+      |> to_string()
+      |> String.trim()
+      |> String.downcase()
+
     Enum.filter(stickers, fn sticker ->
       bicus_allowed = "bicus" in unlocked_categories
 
-      case category do
-        "all" ->
-          sticker.category != "bicus" or bicus_allowed
+      category_match =
+        case category do
+          "all" ->
+            sticker.category != "bicus" or bicus_allowed
 
-        "bicus" ->
-          sticker.category == "bicus" and bicus_allowed
+          "bicus" ->
+            sticker.category == "bicus" and bicus_allowed
 
-        other ->
-          sticker.category == other
-      end
+          other ->
+            sticker.category == other
+        end
+
+      search_match =
+        normalized_query == "" or
+          String.contains?(String.downcase(sticker.name), normalized_query)
+
+      category_match and search_match
     end)
   end
 
@@ -258,13 +364,42 @@ defmodule StickerShopWeb.ShopLive do
 
   defp checkout_changeset(attrs) do
     {%{}, @checkout_types}
-    |> Ecto.Changeset.cast(attrs, [:first_name, :last_name, :email])
+    |> Ecto.Changeset.cast(attrs, [:first_name, :last_name, :email, :payment_method, :notes])
     |> Ecto.Changeset.validate_required([:first_name, :last_name, :email], message: "obligatoire")
     |> Ecto.Changeset.validate_length(:first_name, min: 1, max: 60)
     |> Ecto.Changeset.validate_length(:last_name, min: 1, max: 60)
+    |> Ecto.Changeset.validate_length(:notes, max: 500)
     |> Ecto.Changeset.validate_format(:email, ~r/^[^\s]+@[^\s]+$/,
       message: "adresse email invalide"
     )
+  end
+
+  defp build_order_notes(checkout) do
+    payment_label =
+      case Map.get(checkout, :payment_method) do
+        "cash" -> "Paiement prévu : Cash (espèces)"
+        "wero" -> "Paiement prévu : Wero"
+        "rib" -> "Paiement prévu : Virement (RIB demandé)"
+        _ -> nil
+      end
+
+    custom_notes =
+      case Map.get(checkout, :notes) do
+        notes when is_binary(notes) ->
+          trimmed = String.trim(notes)
+          if trimmed == "", do: nil, else: trimmed
+
+        _ ->
+          nil
+      end
+
+    [payment_label, custom_notes]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
+    |> case do
+      "" -> nil
+      combined -> combined
+    end
   end
 
   defp checkout_error_message(changeset) do
@@ -289,6 +424,13 @@ defmodule StickerShopWeb.ShopLive do
 
   def quantity(quantities, sticker_id) do
     quantity(quantities, sticker_id, Formats.default_id())
+  end
+
+  def total_sticker_quantity(quantities, sticker_id) do
+    Enum.reduce(quantities, 0, fn
+      {{^sticker_id, _format_id}, qty}, acc when qty > 0 -> acc + qty
+      _, acc -> acc
+    end)
   end
 
   defp parse_id(id) when is_integer(id), do: id

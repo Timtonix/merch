@@ -13,7 +13,7 @@
     </div>
     <p
       id="cart-summary-badge"
-      class="inline-flex items-center gap-2 self-start rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-sm font-medium text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+      class="inline-flex items-center gap-2 self-start rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
     >
       <.icon name="hero-shopping-bag" class="size-4 text-zinc-500 dark:text-zinc-400" />
       <span id="cart-count" class="font-bold">{@cart_count}</span>
@@ -24,9 +24,9 @@
     </p>
   </section>
 
-  <!-- Filtres de Catégories (Tous, Général, Bicus protégé) -->
-  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/80 pb-4 pt-2 dark:border-zinc-800">
-    <div class="flex items-center gap-1.5 rounded-2xl bg-zinc-100 p-1 dark:bg-zinc-800/80">
+  <!-- Barre de filtres (Catégories + Recherche instantanée) -->
+  <div class="flex flex-col gap-3 border-b border-zinc-200/80 pb-4 pt-2 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
+    <div class="flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-100 p-1 dark:bg-zinc-800/80">
       <button
         id="filter-category-all"
         type="button"
@@ -77,25 +77,55 @@
         <%= if "bicus" in @unlocked_categories do %>
           <.icon name="hero-lock-open" class="size-3.5 text-emerald-600 dark:text-emerald-400" />
           <span>Bicus</span>
-          <span class="rounded-full bg-emerald-100 px-1.5 py-0.2 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+          <span class="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
             Déverrouillé
           </span>
         <% else %>
           <.icon name="hero-lock-closed" class="size-3.5 text-amber-500" />
           <span>Bicus</span>
-          <span class="rounded-full bg-amber-100 px-1.5 py-0.2 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+          <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
             Privé
           </span>
         <% end %>
       </button>
     </div>
 
-    <p class="text-xs text-zinc-500">
-      Multi-formats disponibles : 6×6 cm, 10×10 cm, 14×14 cm, et Poster A4
-    </p>
+    <div class="flex items-center gap-3">
+      <form
+        id="sticker-search-form"
+        phx-change="search"
+        phx-submit="search"
+        class="relative w-full sm:w-64"
+      >
+        <.icon
+          name="hero-magnifying-glass"
+          class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400"
+        />
+        <input
+          id="sticker-search-input"
+          type="text"
+          name="query"
+          value={@search_query}
+          placeholder="Rechercher un sticker..."
+          phx-debounce="150"
+          class="w-full rounded-xl border border-zinc-200 bg-white py-1.5 pl-9 pr-8 text-xs text-zinc-900 placeholder-zinc-400 shadow-2xs focus:border-zinc-900 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-400"
+        />
+        <%= if @search_query != "" do %>
+          <button
+            id="clear-search-btn"
+            type="button"
+            phx-click="clear_search"
+            aria-label="Effacer la recherche"
+            class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+          >
+            <.icon name="hero-x-mark" class="size-3.5" />
+          </button>
+        <% end %>
+      </form>
+    </div>
   </div>
 
-  <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_23rem]">
+  <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_24rem]">
     <!-- Galerie des stickers -->
     <div
       id="sticker-gallery"
@@ -112,54 +142,91 @@
       <article
         :for={{dom_id, sticker} <- @streams.stickers}
         id={dom_id}
-        class="group flex flex-col overflow-hidden rounded-3xl border border-zinc-200/80 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+        class="group flex flex-col overflow-hidden rounded-3xl border border-zinc-200/80 bg-white shadow-sm transition duration-200 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
       >
-        <!-- Visuel sticker et badges -->
         <% cur_format_id = selected_format(@selected_formats, sticker.id) %>
         <% cur_format = Formats.get(cur_format_id) %>
         <% cur_price = Formats.price_for(sticker.unit_price_cents, cur_format_id) %>
         <% cur_qty = quantity(@quantities, sticker.id, cur_format_id) %>
+        <% total_qty = total_sticker_quantity(@quantities, sticker.id) %>
 
-        <div class="relative aspect-square bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.9),transparent_45%),linear-gradient(180deg,#f4f4f5,white)] p-6 dark:bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_45%),linear-gradient(180deg,#18181b,#09090b)]">
-          <img
-            src={sticker.image_path}
-            alt={sticker.name}
-            class="size-full object-contain drop-shadow-md transition duration-300 group-hover:scale-[1.03]"
-          />
-
-          <!-- Badge dimensions actuelles -->
-          <span
-            id={"sticker-dimensions-#{sticker.id}"}
-            class="absolute left-4 top-4 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-medium tracking-wide text-zinc-700 shadow-sm backdrop-blur-xs dark:bg-zinc-950/80 dark:text-zinc-300"
-          >
-            {cur_format.dimensions_label}
-          </span>
-
-          <!-- Badge catégorie si Bicus -->
-          <%= if sticker.category == "bicus" do %>
-            <span class="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm backdrop-blur-xs">
-              <.icon name="hero-user-group" class="size-3" />
-              <span>Bicus</span>
+        <!-- En-tête visuel du sticker : barre de badges dédiée + boîte d'image strictement bornée -->
+        <div class="relative flex h-56 w-full shrink-0 flex-col justify-between overflow-hidden border-b border-zinc-100 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.95),transparent_70%),linear-gradient(180deg,#f4f4f5,#fafafa)] dark:border-zinc-800/80 dark:bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.07),transparent_70%),linear-gradient(180deg,#18181b,#09090b)]">
+          <!-- Ligne supérieure des badges (ne chevauche jamais l'image et ne sort jamais de la Card) -->
+          <div class="z-10 flex w-full items-center justify-between gap-2 px-3.5 pt-3">
+            <span
+              id={"sticker-dimensions-#{sticker.id}"}
+              class="inline-flex max-w-[55%] items-center truncate rounded-full border border-zinc-200/80 bg-white/95 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-700 shadow-2xs dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300"
+            >
+              {cur_format.dimensions_label}
             </span>
-          <% end %>
+
+            <div class="flex min-w-0 items-center gap-1.5">
+              <%= if total_qty > 0 do %>
+                <span class="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-2xs">
+                  <.icon name="hero-shopping-bag" class="size-3" />
+                  <span>{total_qty}</span>
+                </span>
+              <% end %>
+
+              <%= if sticker.category == "bicus" do %>
+                <span class="inline-flex items-center gap-1 truncate rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-2xs">
+                  <.icon name="hero-user-group" class="size-3 shrink-0" />
+                  <span class="truncate">Bicus</span>
+                </span>
+              <% end %>
+
+              <button
+                id={"sticker-zoom-#{sticker.id}"}
+                type="button"
+                phx-click="open_preview"
+                phx-value-id={sticker.id}
+                title="Agrandir le visuel"
+                aria-label={"Agrandir #{sticker.name}"}
+                class="flex size-6 items-center justify-center rounded-full border border-zinc-200/80 bg-white/90 text-zinc-500 shadow-2xs transition hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/90 dark:text-zinc-400 dark:hover:text-white"
+              >
+                <.icon name="hero-arrows-pointing-out" class="size-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Conteneur d'image strictement contenu (h-40 max, overflow-hidden) -->
+          <div
+            phx-click="open_preview"
+            phx-value-id={sticker.id}
+            class="flex h-40 w-full cursor-pointer items-center justify-center overflow-hidden px-6 pb-4 pt-1"
+          >
+            <img
+              src={sticker.image_path}
+              alt={sticker.name}
+              loading="lazy"
+              class="max-h-32 w-auto max-w-full object-contain drop-shadow-md transition duration-300 group-hover:scale-105"
+            />
+          </div>
         </div>
 
-        <div class="flex flex-1 flex-col gap-4 p-5">
+        <!-- Corps de la Card -->
+        <div class="flex flex-1 flex-col gap-3.5 p-4 sm:p-5">
           <!-- Nom et Prix calculé selon format -->
           <div class="flex items-start justify-between gap-3">
-            <div>
-              <h2 class="text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+            <div class="min-w-0 flex-1">
+              <h2
+                class="truncate text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
+                title={sticker.name}
+              >
                 {sticker.name}
               </h2>
-              <p class="text-[11px] text-zinc-500">
-                Format sélectionné :
-                <span class="font-medium text-zinc-700 dark:text-zinc-300">{cur_format.label}</span>
+              <p class="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+                Format :
+                <span class="font-semibold text-zinc-700 dark:text-zinc-300">
+                  {cur_format.label}
+                </span>
               </p>
             </div>
-            <div class="text-right">
+            <div class="shrink-0 text-right">
               <p
                 id={"sticker-price-#{sticker.id}"}
-                class="shrink-0 text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-50"
+                class="text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-50"
               >
                 {Catalog.format_price_cents(cur_price)}
               </p>
@@ -167,13 +234,15 @@
             </div>
           </div>
 
-          <!-- Sélecteur de format -->
+          <!-- Sélecteur de format en grille 2x2 pour éviter tout débordement des labels -->
           <div class="space-y-1.5">
-            <label class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            <span class="block text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
               Choisir la taille
-            </label>
-            <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            </span>
+            <div class="grid grid-cols-2 gap-1.5">
               <%= for format <- @formats do %>
+                <% fmt_qty = quantity(@quantities, sticker.id, format.id) %>
+                <% is_selected = cur_format_id == format.id %>
                 <button
                   id={"sticker-#{sticker.id}-format-#{format.id}"}
                   type="button"
@@ -181,21 +250,36 @@
                   phx-value-id={sticker.id}
                   phx-value-format={format.id}
                   class={[
-                    "flex flex-col items-center justify-center rounded-xl p-1.5 text-center transition border",
-                    if(cur_format_id == format.id,
+                    "relative flex min-w-0 flex-col justify-center overflow-hidden rounded-xl border px-2.5 py-1.5 text-left transition",
+                    if(is_selected,
                       do:
-                        "border-zinc-900 bg-zinc-900 text-white shadow-sm dark:border-white dark:bg-white dark:text-zinc-900",
+                        "border-zinc-900 bg-zinc-900 text-white shadow-xs dark:border-white dark:bg-white dark:text-zinc-900",
                       else:
-                        "border-zinc-200 bg-zinc-50/70 text-zinc-700 hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        "border-zinc-200 bg-zinc-50/80 text-zinc-700 hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800"
                     )
                   ]}
                 >
-                  <span class="text-xs font-semibold leading-tight">{format.label}</span>
+                  <div class="flex w-full items-center justify-between gap-1">
+                    <span class="truncate text-xs font-semibold leading-tight">
+                      {Map.get(format, :short_label, format.label)}
+                    </span>
+                    <%= if fmt_qty > 0 do %>
+                      <span class={[
+                        "shrink-0 rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums",
+                        if(is_selected,
+                          do: "bg-white/20 text-white dark:bg-zinc-900/20 dark:text-zinc-900",
+                          else: "bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100"
+                        )
+                      ]}>
+                        ×{fmt_qty}
+                      </span>
+                    <% end %>
+                  </div>
                   <span class={[
-                    "text-[10px] leading-tight",
-                    if(cur_format_id == format.id,
+                    "truncate text-[10px] leading-tight mt-0.5",
+                    if(is_selected,
                       do: "text-zinc-300 dark:text-zinc-600",
-                      else: "text-zinc-400 dark:text-zinc-500"
+                      else: "text-zinc-500 dark:text-zinc-400"
                     )
                   ]}>
                     {format.dimensions_label}
@@ -206,9 +290,11 @@
           </div>
 
           <!-- Contrôle de quantité -->
-          <div class="mt-auto flex items-center justify-between gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800/80">
-            <span class="text-xs font-medium text-zinc-500">Quantité ({cur_format.dimensions_label})</span>
-            <div class="flex items-center gap-2">
+          <div class="mt-auto flex items-center justify-between gap-2 border-t border-zinc-100 pt-3.5 dark:border-zinc-800/80">
+            <span class="min-w-0 truncate text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Qté ({cur_format.dimensions_label})
+            </span>
+            <div class="flex shrink-0 items-center gap-1.5">
               <button
                 id={"sticker-dec-#{sticker.id}"}
                 type="button"
@@ -217,13 +303,13 @@
                 phx-value-format={cur_format_id}
                 disabled={cur_qty == 0}
                 aria-label={"Retirer un #{sticker.name} en format #{cur_format.label}"}
-                class="flex size-9 items-center justify-center rounded-full border border-zinc-200 text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                class="flex size-8 items-center justify-center rounded-full border border-zinc-200 text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
-                <.icon name="hero-minus" class="size-4" />
+                <.icon name="hero-minus" class="size-3.5" />
               </button>
               <span
                 id={"sticker-qty-#{sticker.id}"}
-                class="min-w-8 text-center text-base font-semibold tabular-nums"
+                class="min-w-7 text-center text-sm font-bold tabular-nums text-zinc-900 dark:text-zinc-100"
               >
                 {cur_qty}
               </span>
@@ -235,9 +321,9 @@
                 phx-value-format={cur_format_id}
                 disabled={cur_qty >= 99}
                 aria-label={"Ajouter un #{sticker.name} en format #{cur_format.label}"}
-                class="flex size-9 items-center justify-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                class="flex size-8 items-center justify-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
-                <.icon name="hero-plus" class="size-4" />
+                <.icon name="hero-plus" class="size-3.5" />
               </button>
             </div>
           </div>
@@ -252,23 +338,76 @@
     >
       <%= if @placed_order do %>
         <div id="order-confirmation" class="space-y-4">
-          <div class="flex size-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-            <.icon name="hero-check-circle" class="size-6" />
+          <div class="flex items-center gap-3">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+              <.icon name="hero-check-circle" class="size-6" />
+            </div>
+            <div>
+              <h2 class="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                Commande #{@placed_order.id} confirmée !
+              </h2>
+              <p class="text-xs text-emerald-700 dark:text-emerald-400">
+                Un email récapitulatif a été envoyé à {@placed_order.customer_email}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 class="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Commande confirmée !
-            </h2>
-            <p class="mt-1 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              Merci {@placed_order.customer_name}. Ta commande
-              <span class="font-bold text-zinc-900 dark:text-zinc-100">#{@placed_order.id}</span>
-              d'un montant de
-              <span class="font-bold text-zinc-900 dark:text-zinc-100">{Catalog.format_price_cents(
-                @placed_order.total_cents
-              )}</span>
-              est bien enregistrée et transmise à l'atelier.
-            </p>
+
+          <p class="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            Merci <strong class="text-zinc-900 dark:text-zinc-100">{@placed_order.customer_name}</strong>.
+            Ta commande d'un montant total de
+            <span class="font-bold text-zinc-900 dark:text-zinc-100">{Catalog.format_price_cents(
+              @placed_order.total_cents
+            )}</span>
+            est transmise à l'atelier. Tu recevras un nouveau mail dès que les stickers seront imprimés !
+          </p>
+
+          <!-- Encart Moyens de paiement possibles -->
+          <div
+            id="payment-methods-box"
+            class="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 text-xs dark:border-zinc-800 dark:bg-zinc-800/50"
+          >
+            <h3 class="font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-200">
+              Moyens de paiement possibles
+            </h3>
+            <ul class="mt-2.5 space-y-2 text-zinc-600 dark:text-zinc-300">
+              <li class="flex items-start gap-2">
+                <.icon
+                  name="hero-banknotes"
+                  class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                />
+                <span>
+                  <strong class="text-zinc-900 dark:text-white">Cash (Espèces) :</strong>
+                  lors de la remise en main propre des stickers.
+                </span>
+              </li>
+              <li class="flex items-start gap-2">
+                <.icon
+                  name="hero-device-phone-mobile"
+                  class="mt-0.5 size-4 shrink-0 text-sky-600 dark:text-sky-400"
+                />
+                <span>
+                  <strong class="text-zinc-900 dark:text-white">Wero :</strong>
+                  paiement mobile instantané
+                  <%= if is_binary(@payment_info.wero_phone) and String.trim(@payment_info.wero_phone) != "" do %>
+                    au
+                    <strong class="text-zinc-900 dark:text-white">{@payment_info.wero_phone}</strong>
+                  <% end %>
+                  (indique <em>Commande #{@placed_order.id}</em>).
+                </span>
+              </li>
+              <li class="flex items-start gap-2">
+                <.icon
+                  name="hero-building-library"
+                  class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+                />
+                <span>
+                  <strong class="text-zinc-900 dark:text-white">Virement (RIB) :</strong>
+                  je t'envoie mon RIB moi-même sur simple demande.
+                </span>
+              </li>
+            </ul>
           </div>
+
           <button
             id="shop-again"
             type="button"
@@ -286,10 +425,10 @@
           </span>
         </div>
         <p class="mt-1 text-xs text-zinc-500">
-          Pas de compte requis : prénom, nom et email suffisent.
+          Pas de compte requis : tu recevras le récapitulatif et le suivi d'impression par mail.
         </p>
 
-        <ul id="cart-lines" class="mt-5 space-y-3">
+        <ul id="cart-lines" class="mt-4 max-h-64 space-y-2.5 overflow-y-auto pr-1">
           <li
             :if={@cart_lines == []}
             id="cart-empty"
@@ -300,28 +439,69 @@
           <li
             :for={line <- @cart_lines}
             id={"cart-line-#{line.sticker.id}-#{line.format.id}"}
-            class="flex items-center justify-between gap-3 text-sm"
+            class="flex items-center justify-between gap-2.5 rounded-2xl border border-zinc-100 bg-zinc-50/70 p-2.5 text-sm dark:border-zinc-800 dark:bg-zinc-800/40"
           >
+            <img
+              src={line.sticker.image_path}
+              alt={line.sticker.name}
+              class="size-10 shrink-0 rounded-xl bg-white p-1 object-contain shadow-2xs dark:bg-zinc-900"
+            />
             <div class="min-w-0 flex-1">
-              <p class="truncate font-medium text-zinc-900 dark:text-zinc-100">
+              <p class="truncate text-xs font-bold text-zinc-900 dark:text-zinc-100">
                 {line.sticker.name}
               </p>
-              <p class="text-xs text-zinc-500">
-                {line.format.label} ({line.format.dimensions_label})
+              <p class="truncate text-[11px] text-zinc-500">
+                {Map.get(line.format, :short_label, line.format.label)} ({line.format.dimensions_label})
               </p>
+              <div class="mt-1 flex items-center gap-1.5">
+                <button
+                  id={"cart-dec-#{line.sticker.id}-#{line.format.id}"}
+                  type="button"
+                  phx-click="dec"
+                  phx-value-id={line.sticker.id}
+                  phx-value-format={line.format.id}
+                  class="flex size-5 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                  aria-label="Moins"
+                >
+                  <.icon name="hero-minus" class="size-3" />
+                </button>
+                <span class="min-w-4 text-center text-xs font-semibold tabular-nums">
+                  {line.quantity}
+                </span>
+                <button
+                  id={"cart-inc-#{line.sticker.id}-#{line.format.id}"}
+                  type="button"
+                  phx-click="inc"
+                  phx-value-id={line.sticker.id}
+                  phx-value-format={line.format.id}
+                  class="flex size-5 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                  aria-label="Plus"
+                >
+                  <.icon name="hero-plus" class="size-3" />
+                </button>
+              </div>
             </div>
-            <div class="text-right shrink-0">
-              <span class="tabular-nums text-xs text-zinc-500 block">
-                {line.quantity} × {Catalog.format_price_cents(line.unit_price_cents)}
-              </span>
-              <span class="font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+            <div class="shrink-0 text-right">
+              <button
+                id={"cart-remove-#{line.sticker.id}-#{line.format.id}"}
+                type="button"
+                phx-click="remove_line"
+                phx-value-id={line.sticker.id}
+                phx-value-format={line.format.id}
+                class="mb-1 inline-flex rounded-md p-0.5 text-zinc-400 hover:text-rose-500"
+                title="Retirer du panier"
+                aria-label="Retirer du panier"
+              >
+                <.icon name="hero-x-mark" class="size-3.5" />
+              </button>
+              <span class="block text-xs font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
                 {Catalog.format_price_cents(line.line_total_cents)}
               </span>
             </div>
           </li>
         </ul>
 
-        <div class="mt-5 flex items-baseline justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
+        <div class="mt-4 flex items-baseline justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800">
           <span class="text-sm font-medium text-zinc-600 dark:text-zinc-400">Total</span>
           <span
             id="checkout-total"
@@ -336,16 +516,41 @@
           id="checkout-form"
           phx-change="validate"
           phx-submit="place_order"
-          class="mt-5 space-y-2"
+          class="mt-4 space-y-2"
         >
+          <div class="grid grid-cols-2 gap-2">
+            <.input
+              field={@form[:first_name]}
+              type="text"
+              label="Prénom"
+              autocomplete="given-name"
+            />
+            <.input field={@form[:last_name]} type="text" label="Nom" autocomplete="family-name" />
+          </div>
           <.input
-            field={@form[:first_name]}
-            type="text"
-            label="Prénom"
-            autocomplete="given-name"
+            field={@form[:email]}
+            type="email"
+            label="Email (pour le récapitulatif)"
+            autocomplete="email"
           />
-          <.input field={@form[:last_name]} type="text" label="Nom" autocomplete="family-name" />
-          <.input field={@form[:email]} type="email" label="Email" autocomplete="email" />
+
+          <.input
+            field={@form[:payment_method]}
+            type="select"
+            label="Moyen de paiement souhaité"
+            options={[
+              {"Cash (espèces à la remise)", "cash"},
+              {"Wero (paiement mobile)", "wero"},
+              {"Virement bancaire (m'envoyer le RIB)", "rib"}
+            ]}
+          />
+
+          <.input
+            field={@form[:notes]}
+            type="text"
+            label="Note ou commentaire (optionnel)"
+            placeholder="Ex: dispo jeudi, précision..."
+          />
 
           <button
             id="checkout-submit"
@@ -360,6 +565,64 @@
       <% end %>
     </aside>
   </div>
+
+  <!-- Modale d'aperçu agrandi (Lightbox) d'un sticker -->
+  <%= if @preview_sticker do %>
+    <div
+      id="sticker-preview-modal-wrapper"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        id="sticker-preview-backdrop"
+        class="fixed inset-0 bg-black/65 backdrop-blur-xs transition-opacity"
+        phx-click="close_preview"
+        aria-hidden="true"
+      />
+      <div
+        id="sticker-preview-modal"
+        class="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+        phx-window-keydown="close_preview"
+        phx-key="escape"
+      >
+        <div class="flex items-center justify-between gap-4 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+          <div class="min-w-0">
+            <h3 class="truncate text-lg font-bold text-zinc-900 dark:text-zinc-50">
+              {@preview_sticker.name}
+            </h3>
+            <p class="text-xs text-zinc-500">
+              Aperçu haute définition · Disponible en 4 formats
+            </p>
+          </div>
+          <button
+            id="close-preview-modal-btn"
+            type="button"
+            phx-click="close_preview"
+            class="rounded-xl p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <.icon name="hero-x-mark" class="size-5" />
+          </button>
+        </div>
+
+        <div class="my-4 flex h-72 w-full items-center justify-center rounded-2xl bg-zinc-50 p-6 dark:bg-zinc-800/50">
+          <img
+            src={@preview_sticker.image_path}
+            alt={@preview_sticker.name}
+            class="max-h-60 max-w-full object-contain drop-shadow-lg"
+          />
+        </div>
+
+        <div class="flex items-center justify-end">
+          <button
+            type="button"
+            phx-click="close_preview"
+            class="rounded-xl bg-zinc-900 px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900"
+          >
+            Fermer l'aperçu
+          </button>
+        </div>
+      </div>
+    </div>
+  <% end %>
 
   <!-- Modal de déverrouillage de la catégorie Bicus -->
   <%= if @show_password_modal do %>

@@ -10,7 +10,7 @@ defmodule StickerShop.Orders do
   alias StickerShop.Catalog
   alias StickerShop.Catalog.Formats
   alias StickerShop.Catalog.Sticker
-  alias StickerShop.Orders.{Order, OrderItem}
+  alias StickerShop.Orders.{Order, OrderItem, OrderNotifier}
 
   def list_orders(criteria \\ []) do
     base_query =
@@ -58,10 +58,24 @@ defmodule StickerShop.Orders do
   end
 
   def mark_orders_as_printed(ids) when is_list(ids) do
+    orders_to_notify =
+      Repo.all(
+        from o in Order,
+          where: o.id in ^ids and o.status != :printed,
+          preload: [order_items: :sticker]
+      )
+
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    from(o in Order, where: o.id in ^ids)
-    |> Repo.update_all(set: [status: :printed, updated_at: now])
+    {count, result} =
+      from(o in Order, where: o.id in ^ids)
+      |> Repo.update_all(set: [status: :printed, updated_at: now])
+
+    Enum.each(orders_to_notify, fn order ->
+      OrderNotifier.deliver_order_printed(%{order | status: :printed, updated_at: now})
+    end)
+
+    {count, result}
   end
 
   def get_order!(id) do
@@ -111,16 +125,37 @@ defmodule StickerShop.Orders do
     end)
     |> Repo.transaction()
     |> case do
-      {:ok, %{order: order}} -> {:ok, get_order!(order.id)}
-      {:error, :order, changeset, _} -> {:error, changeset}
-      {:error, :validated_items, reason, _} -> {:error, reason}
+      {:ok, %{order: order}} ->
+        full_order = get_order!(order.id)
+        OrderNotifier.deliver_order_confirmation(full_order)
+        {:ok, full_order}
+
+      {:error, :order, changeset, _} ->
+        {:error, changeset}
+
+      {:error, :validated_items, reason, _} ->
+        {:error, reason}
     end
   end
 
   def update_order_status(%Order{} = order, status) do
-    order
-    |> Order.changeset(%{status: status})
-    |> Repo.update()
+    previous_status = order.status
+
+    case order
+         |> Order.changeset(%{status: status})
+         |> Repo.update() do
+      {:ok, updated} ->
+        updated = Repo.preload(updated, order_items: :sticker)
+
+        if status == :printed and previous_status != :printed do
+          OrderNotifier.deliver_order_printed(updated)
+        end
+
+        {:ok, updated}
+
+      error ->
+        error
+    end
   end
 
   def change_order(%Order{} = order, attrs \\ %{}) do

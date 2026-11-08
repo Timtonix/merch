@@ -74,11 +74,11 @@
           <div class="space-y-2">
             <div class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
               <span class="flex size-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Planches d'impression A4 groupées (6×6 cm · 12 stickers / page)
+              Planches d'impression A4 groupées (multi-formats adaptatifs)
             </div>
             <p class="max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
               Toutes les commandes en attente sont regroupées automatiquement sur la même planche pour ne gaspiller aucun espace papier.
-              Traits de coupe fins (2-3 mm) et badge de commande intégrés.
+              Le passage en « Imprimées » envoie automatiquement un email aux acheteurs concernés.
             </p>
             <div class="flex flex-wrap items-center gap-4 pt-1 text-sm font-medium">
               <span class="inline-flex items-center gap-1.5 rounded-lg bg-zinc-200/60 px-2.5 py-1 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
@@ -117,7 +117,7 @@
                 id="mark-all-printed-btn"
                 type="button"
                 phx-click="mark_pending_printed"
-                data-confirm={"Marquer les #{@pending_orders_count} commandes comme imprimées ?"}
+                data-confirm={"Marquer les #{@pending_orders_count} commandes comme imprimées et envoyer les emails aux clients ?"}
                 class="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-300 bg-white px-4 py-3 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
                 <.icon name="hero-check" class="size-4 text-emerald-600" />
@@ -135,7 +135,7 @@
 
       <!-- Filtres de liste -->
       <div class="flex flex-wrap items-center justify-between gap-4">
-        <div class="flex items-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+        <div class="flex flex-wrap items-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
           <span>Filtrer :</span>
           <button
             type="button"
@@ -164,6 +164,34 @@
             ]}
           >
             Imprimées ({@printed_orders_count})
+          </button>
+          <button
+            type="button"
+            phx-click="filter_status"
+            phx-value-status="fulfilled"
+            class={[
+              "rounded-lg px-2.5 py-1 transition",
+              if(@status_filter == :fulfilled,
+                do: "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900",
+                else: "hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
+              )
+            ]}
+          >
+            Livrées ({@fulfilled_orders_count})
+          </button>
+          <button
+            type="button"
+            phx-click="filter_status"
+            phx-value-status="cancelled"
+            class={[
+              "rounded-lg px-2.5 py-1 transition",
+              if(@status_filter == :cancelled,
+                do: "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900",
+                else: "hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
+              )
+            ]}
+          >
+            Annulées ({@cancelled_orders_count})
           </button>
           <button
             type="button"
@@ -202,19 +230,24 @@
           class="flex flex-col gap-4 rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
         >
           <div class="flex flex-col justify-between gap-3 border-b border-zinc-100 pb-3 sm:flex-row sm:items-center dark:border-zinc-800/80">
-            <div class="flex items-center gap-3">
-              <span class="flex size-9 items-center justify-center rounded-xl bg-zinc-100 font-mono text-sm font-bold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+            <div class="flex items-center gap-3 min-w-0">
+              <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 font-mono text-sm font-bold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
                 #{order.id}
               </span>
-              <div>
-                <h3 class="font-semibold text-zinc-900 dark:text-zinc-50">
-                  {order.customer_name}
-                </h3>
-                <p class="text-xs text-zinc-500">{order.customer_email}</p>
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="truncate font-semibold text-zinc-900 dark:text-zinc-50">
+                    {order.customer_name}
+                  </h3>
+                  <span class="text-[11px] text-zinc-400">
+                    · {Calendar.strftime(order.inserted_at, "%d/%m/%Y %H:%M")}
+                  </span>
+                </div>
+                <p class="truncate text-xs text-zinc-500">{order.customer_email}</p>
               </div>
             </div>
 
-            <div class="flex flex-wrap items-center gap-3">
+            <div class="flex flex-wrap items-center gap-2.5">
               <span class={[
                 "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium",
                 case order.status do
@@ -234,7 +267,7 @@
                     "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200"
                 end
               ]}>
-                {order.status}
+                {status_label(order.status)} ({order.status})
               </span>
 
               <span class="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
@@ -258,7 +291,7 @@
                   phx-click="update_status"
                   phx-value-order_id={order.id}
                   phx-value-status="printed"
-                  class="rounded-lg bg-zinc-100 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  class="rounded-lg bg-zinc-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
                   -> Imprimée
                 </button>
@@ -268,43 +301,73 @@
                   phx-click="update_status"
                   phx-value-order_id={order.id}
                   phx-value-status="fulfilled"
-                  class="rounded-lg bg-zinc-100 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  class="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
                 >
                   -> Livrée
+                </button>
+                <button
+                  id={"resend-email-#{order.id}"}
+                  type="button"
+                  phx-click="resend_email"
+                  phx-value-order_id={order.id}
+                  phx-value-type={
+                    if order.status in [:printed, :fulfilled], do: "printed", else: "confirmation"
+                  }
+                  title="Renvoyer l'email au client"
+                  class="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  <.icon name="hero-envelope" class="size-3.5" />
+                  <span class="hidden sm:inline">Mail</span>
+                </button>
+                <button
+                  :if={order.status in [:pending, :printed]}
+                  type="button"
+                  phx-click="update_status"
+                  phx-value-order_id={order.id}
+                  phx-value-status="cancelled"
+                  data-confirm={"Annuler la commande ##{order.id} ?"}
+                  title="Annuler la commande"
+                  class="rounded-lg border border-zinc-200 p-1 text-zinc-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:border-zinc-700 dark:hover:bg-rose-950/40"
+                >
+                  <.icon name="hero-x-mark" class="size-3.5" />
                 </button>
               </div>
             </div>
           </div>
 
+          <%= if is_binary(order.notes) and String.trim(order.notes) != "" do %>
+            <div class="flex items-center gap-2 rounded-2xl border border-amber-200/70 bg-amber-50/70 px-3.5 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+              <.icon
+                name="hero-chat-bubble-left-ellipsis"
+                class="size-4 shrink-0 text-amber-600 dark:text-amber-400"
+              />
+              <span class="font-medium">{order.notes}</span>
+            </div>
+          <% end %>
+
           <!-- Détail des articles de la commande -->
-          <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <div
               :for={item <- order.order_items}
-              class="flex items-center gap-3 rounded-2xl border border-zinc-100 bg-zinc-50/60 p-2.5 dark:border-zinc-800 dark:bg-zinc-800/40"
+              class="flex items-center gap-3 overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50/60 p-2.5 dark:border-zinc-800 dark:bg-zinc-800/40"
             >
               <img
                 src={item.sticker.image_path}
                 alt={item.sticker.name}
-                class="size-11 rounded-lg object-contain bg-white p-1 drop-shadow-sm dark:bg-zinc-900"
+                class="size-12 shrink-0 rounded-xl bg-white p-1.5 object-contain drop-shadow-2xs dark:bg-zinc-900"
               />
               <div class="min-w-0 flex-1">
-                <p class="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">
+                <p class="truncate text-xs font-bold text-zinc-900 dark:text-zinc-100">
                   {item.sticker.name}
                 </p>
-                <p class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                  <span class="rounded bg-zinc-200 px-1 py-0.2 text-[11px] font-bold dark:bg-zinc-700">
+                <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <span class="rounded-md bg-zinc-900 px-1.5 py-0.5 text-[11px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
                     ×{item.quantity}
                   </span>
-                  <span class="text-[10px] text-zinc-500 ml-1">
-                    ({item.width_mm || item.sticker.width_mm}×{item.height_mm ||
-                      item.sticker.height_mm} mm)
+                  <span class="truncate text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
+                    {format_label(item.format)}
                   </span>
-                </p>
-                <%= if item.format do %>
-                  <p class="text-[10px] text-zinc-500 font-medium">
-                    {item.format}
-                  </p>
-                <% end %>
+                </div>
               </div>
             </div>
           </div>
@@ -472,45 +535,58 @@
               id={"admin-sticker-#{sticker.id}"}
               class="flex flex-col justify-between overflow-hidden rounded-3xl border border-zinc-200/80 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
             >
-              <div class="relative aspect-square rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-800/40">
-                <img
-                  src={sticker.image_path}
-                  alt={sticker.name}
-                  class="size-full object-contain drop-shadow"
-                />
-                <span class="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 shadow-sm dark:bg-zinc-900/90 dark:text-zinc-300">
-                  {sticker.width_mm}×{sticker.height_mm} mm
-                </span>
-                <%= if sticker.category == "bicus" do %>
-                  <span class="absolute bottom-3 left-3 rounded-full bg-amber-500/90 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm">
-                    Bicus 🔒
+              <div class="relative flex h-48 w-full shrink-0 flex-col justify-between overflow-hidden rounded-2xl bg-zinc-50 p-3 dark:bg-zinc-800/40">
+                <div class="z-10 flex items-center justify-between gap-1.5">
+                  <span class="truncate rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 shadow-2xs dark:bg-zinc-900/90 dark:text-zinc-300">
+                    {sticker.width_mm}×{sticker.height_mm} mm
                   </span>
-                <% else %>
-                  <span class="absolute bottom-3 left-3 rounded-full bg-zinc-700/80 px-2 py-0.5 text-[9px] font-medium uppercase tracking-wider text-white shadow-sm">
-                    Général
+                  <span class={[
+                    "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                    if(sticker.active,
+                      do:
+                        "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+                      else: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                    )
+                  ]}>
+                    {if sticker.active, do: "Actif", else: "Inactif"}
                   </span>
-                <% end %>
-                <span class={[
-                  "absolute right-3 top-3 rounded-full px-2 py-0.5 text-[10px] font-bold",
-                  if(sticker.active,
-                    do:
-                      "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-                    else: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
-                  )
-                ]}>
-                  {if sticker.active, do: "Actif", else: "Inactif"}
-                </span>
+                </div>
+
+                <div class="flex h-32 w-full items-center justify-center overflow-hidden px-3">
+                  <img
+                    src={sticker.image_path}
+                    alt={sticker.name}
+                    class="max-h-28 max-w-full object-contain drop-shadow"
+                  />
+                </div>
+
+                <div class="z-10 flex items-center">
+                  <%= if sticker.category == "bicus" do %>
+                    <span class="rounded-full bg-amber-500/90 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-2xs">
+                      Bicus 🔒
+                    </span>
+                  <% else %>
+                    <span class="rounded-full bg-zinc-700/80 px-2 py-0.5 text-[9px] font-medium uppercase tracking-wider text-white shadow-2xs">
+                      Général
+                    </span>
+                  <% end %>
+                </div>
               </div>
 
-              <div class="mt-4 flex items-center justify-between">
-                <div>
-                  <h3 class="font-semibold text-zinc-900 dark:text-zinc-100">{sticker.name}</h3>
+              <div class="mt-4 flex items-center justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                  <h3
+                    class="truncate font-semibold text-zinc-900 dark:text-zinc-100"
+                    title={sticker.name}
+                  >
+                    {sticker.name}
+                  </h3>
                   <p class="text-xs font-medium text-zinc-500">
                     {Catalog.format_price_cents(sticker.unit_price_cents)}
                   </p>
                 </div>
 
-                <div class="flex items-center gap-1.5">
+                <div class="flex shrink-0 items-center gap-1.5">
                   <button
                     id={"toggle-sticker-#{sticker.id}"}
                     type="button"

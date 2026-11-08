@@ -1,6 +1,8 @@
 defmodule StickerShop.OrdersTest do
   use StickerShop.DataCase, async: true
 
+  import Swoosh.TestAssertions
+
   alias StickerShop.Catalog
   alias StickerShop.Orders
   alias StickerShop.Orders.Order
@@ -100,15 +102,28 @@ defmodule StickerShop.OrdersTest do
       assert "must be a valid email" in errors_on(changeset).customer_email
     end
 
-    test "update_order_status/2 moves an order through the print workflow", %{sticker: sticker} do
+    test "update_order_status/2 moves an order through the print workflow and sends printed email",
+         %{sticker: sticker} do
       {:ok, order} =
         Orders.create_order(
           %{customer_name: "Tim", customer_email: "tim@example.com"},
           [%{sticker_id: sticker.id, quantity: 1}]
         )
 
+      assert_email_sent(fn email ->
+        assert email.subject =~ "Récapitulatif de ta commande ##{order.id}"
+        assert email.html_body =~ "Espèces (Cash)"
+        assert email.html_body =~ "Wero"
+        assert email.html_body =~ "Virement bancaire (RIB)"
+      end)
+
       assert {:ok, updated} = Orders.update_order_status(order, :printed)
       assert updated.status == :printed
+
+      assert_email_sent(fn email ->
+        assert email.subject =~ "Tes stickers sont imprimés ! (Commande ##{order.id})"
+        assert email.html_body =~ "Phoenix"
+      end)
     end
 
     test "batch operations: list_pending_orders, count_stickers_in_orders, mark_orders_as_printed",
@@ -134,6 +149,11 @@ defmodule StickerShop.OrdersTest do
       assert Orders.list_pending_orders() == []
       assert Orders.get_order!(order1.id).status == :printed
       assert Orders.get_order!(order2.id).status == :printed
+
+      assert_email_sent(subject: "Récapitulatif de ta commande ##{order1.id} · Stickers")
+      assert_email_sent(subject: "Récapitulatif de ta commande ##{order2.id} · Stickers")
+      assert_email_sent(subject: "Tes stickers sont imprimés ! (Commande ##{order1.id})")
+      assert_email_sent(subject: "Tes stickers sont imprimés ! (Commande ##{order2.id})")
     end
   end
 end
