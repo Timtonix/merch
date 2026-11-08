@@ -302,13 +302,25 @@ defmodule StickerShop.Catalog.ImageOptimizer do
 
               case optimize(primary_file, temp_target, generate_thumbnail: false) do
                 {:ok, ^temp_target} ->
-                  for dir <- dirs do
-                    _ = File.cp(temp_target, Path.join(dir, filename))
-                  end
+                  case File.cp(temp_target, primary_file) do
+                    :ok ->
+                      for extra_dir <- tl(dirs) do
+                        _ = File.cp(temp_target, Path.join(extra_dir, filename))
+                      end
 
-                  _ = File.rm(temp_target)
-                  Logger.info("[ImageOptimizer] Image originale optimisée : #{filename}")
-                  %{acc | optimized: acc.optimized + 1}
+                      _ = File.rm(temp_target)
+                      Logger.info("[ImageOptimizer] Image originale optimisée : #{filename}")
+                      %{acc | optimized: acc.optimized + 1}
+
+                    {:error, reason} ->
+                      _ = File.rm(temp_target)
+
+                      Logger.warning(
+                        "[ImageOptimizer] Impossible d'écrire l'image optimisée #{primary_file} : #{inspect(reason)}"
+                      )
+
+                      acc
+                  end
 
                 _ ->
                   _ = File.rm(temp_target)

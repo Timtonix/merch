@@ -102,14 +102,6 @@ RUN mkdir -p /app/uploads/stickers /app/priv/static \
   && for dir in /app/lib/sticker_shop-*/priv/static; do \
        rm -rf "$dir/uploads" && ln -s /app/uploads "$dir/uploads"; \
      done \
-  && ln -sfn /app/uploads /app/priv/static/uploads \
-  && chown -R nobody:root /app/uploads /app/priv /app/lib/sticker_shop-*/priv/static
-
-USER nobody
-
-# If using an environment that doesn't automatically reap zombie processes, it is
-# advised to add an init process such as tini via `apt-get install`
-# above and adding an entrypoint. See https://github.com/krallin/tini for details
-# ENTRYPOINT ["/tini", "--"]
+  && ln -sfn /app/uploads /app/priv/static/uploads
 
 CMD ["/app/bin/server"]
