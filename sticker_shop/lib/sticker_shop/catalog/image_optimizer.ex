@@ -22,6 +22,117 @@ defmodule StickerShop.Catalog.ImageOptimizer do
   end
 
   @doc """
+  Vérifie qu'un fichier existe sur le disque et n'est pas vide (`size > 0`).
+  """
+  def valid_file?(path) when is_binary(path) do
+    case File.stat(path) do
+      {:ok, %File.Stat{type: :regular, size: size}} when size > 0 -> true
+      _ -> false
+    end
+  end
+
+  @doc """
+  Retourne la liste des répertoires physiques d'uploads (dédupliqués par inode pour éviter
+  d'écraser un fichier sur lui-même lorsque des symlinks pointent vers le même dossier en prod).
+  Le premier répertoire retourné est toujours celui servi par `Plug.Static`.
+  """
+  def storage_dirs do
+    priv_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
+
+    candidates =
+      [
+        priv_dir,
+        if(File.dir?("/app/uploads"), do: "/app/uploads/stickers", else: nil),
+        if(File.dir?("/app/priv/static"), do: "/app/priv/static/uploads/stickers", else: nil),
+        if(File.dir?("priv/static"), do: Path.expand("priv/static/uploads/stickers"), else: nil)
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    Enum.each(candidates, fn dir ->
+      _ = File.mkdir_p(dir)
+    end)
+
+    candidates
+    |> Enum.filter(&File.dir?/1)
+    |> Enum.uniq_by(fn dir ->
+      case File.stat(dir) do
+        {:ok, %File.Stat{inode: inode, major_device: dev}} when inode != 0 ->
+          {:inode, dev, inode}
+
+        _ ->
+          {:path, Path.expand(dir)}
+      end
+    end)
+  end
+
+  @doc """
+  Vérifie si la miniature WebP existe dans le dossier servi par `Plug.Static`
+  (ou la synchronise depuis un autre dossier de stockage si disponible).
+  """
+  def thumbnail_exists?(thumb_filename) when is_binary(thumb_filename) do
+    priv_thumb =
+      Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers", thumb_filename])
+
+    if valid_file?(priv_thumb) do
+      true
+    else
+      case Enum.find(storage_dirs(), &valid_file?(Path.join(&1, thumb_filename))) do
+        nil ->
+          false
+
+        source_dir ->
+          _ = File.mkdir_p(Path.dirname(priv_thumb))
+          _ = File.cp(Path.join(source_dir, thumb_filename), priv_thumb)
+          valid_file?(priv_thumb)
+      end
+    end
+  end
+
+  @doc """
+  Sauvegarde un sticker nouvellement téléversé, l'optimise, génère sa miniature WebP
+  et synchronise les fichiers vers tous les dossiers physiques de stockage.
+  """
+  def save_uploaded_sticker(temp_source_path, filename) do
+    dirs = storage_dirs()
+    primary_dir = hd(dirs)
+    primary_target = Path.join(primary_dir, filename)
+
+    optimize(temp_source_path, primary_target)
+
+    thumb_name = thumbnail_filename(filename)
+    primary_thumb = Path.join(primary_dir, thumb_name)
+
+    for extra_dir <- tl(dirs) do
+      _ = File.cp(primary_target, Path.join(extra_dir, filename))
+
+      if valid_file?(primary_thumb) do
+        _ = File.cp(primary_thumb, Path.join(extra_dir, thumb_name))
+      end
+    end
+
+    {:ok, "/uploads/stickers/#{filename}"}
+  end
+
+  @doc """
+  Supprime un sticker et sa miniature WebP de tous les dossiers physiques de stockage.
+  """
+  def remove_uploaded_sticker(image_path) when is_binary(image_path) do
+    if String.starts_with?(image_path, "/uploads/stickers/") do
+      filename = Path.basename(image_path)
+      thumb_name = thumbnail_filename(filename)
+
+      for dir <- storage_dirs() do
+        _ = File.rm(Path.join(dir, filename))
+        _ = File.rm(Path.join(dir, thumb_name))
+      end
+    end
+
+    :ok
+  end
+
+  def remove_uploaded_sticker(_), do: :ok
+
+  @doc """
   Génère une miniature WebP légère (~360x360 px max, qualité 82, sans métadonnées)
   à partir d'un fichier image source vers `thumb_path`.
   """
@@ -72,9 +183,6 @@ defmodule StickerShop.Catalog.ImageOptimizer do
   @doc """
   Optimise un fichier image source vers le chemin cible ET génère sa miniature WebP
   dans le même dossier si c'est une image matricielle (PNG, JPG, WebP).
-  - SVG : conservé intact (vectoriel pur, 0 perte, poids plume).
-  - PNG / JPG / WebP : redimensionné proportionnellement si > 1200 px avec rééchantillonnage
-    haute fidélité (Lanczos3), suppression des métadonnées superflues et compression maximale.
   """
   def optimize(source_path, target_path, opts \\ []) do
     ext = Path.extname(target_path) |> String.downcase()
@@ -145,91 +253,103 @@ defmodule StickerShop.Catalog.ImageOptimizer do
 
   @doc """
   Optimise rétroactivement tous les stickers du catalogue stockés dans `/uploads/stickers/`
-  et génère les miniatures WebP (`thumb_<nom>.webp`) manquantes.
-  Idempotent : ne régénère que les miniatures absentes et n'optimise que les originaux > 250 Ko.
+  et génère les miniatures WebP (`thumb_<nom>.webp`) manquantes ou vides (0 octet).
+  Fonctionne quel que soit le répertoire courant (`WORKDIR` ou `/app/bin`).
   """
   def optimize_all_uploads do
-    uploads_dir = Path.expand("priv/static/uploads/stickers")
-    build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
+    dirs = storage_dirs()
+    primary_dir = hd(dirs)
 
-    # En production ou dev, on s'assure que les deux dossiers existent
-    File.mkdir_p!(uploads_dir)
-    if File.dir?(Path.dirname(build_dir)), do: File.mkdir_p!(build_dir)
+    # Rassemble tous les fichiers sources présents dans l'un quelconque des dossiers de stockage
+    all_raster_filenames =
+      dirs
+      |> Enum.flat_map(fn dir ->
+        case File.ls(dir) do
+          {:ok, files} -> files
+          _ -> []
+        end
+      end)
+      |> Enum.uniq()
+      |> Enum.filter(fn filename ->
+        ext = Path.extname(filename) |> String.downcase()
 
-    case File.ls(uploads_dir) do
-      {:ok, files} ->
-        raster_files =
-          Enum.filter(files, fn filename ->
-            ext = Path.extname(filename) |> String.downcase()
+        ext in ~w(.png .jpg .jpeg .webp) and
+          not String.starts_with?(filename, "thumb_") and
+          not String.ends_with?(filename, ".gitkeep")
+      end)
 
-            ext in ~w(.png .jpg .jpeg .webp) and
-              not String.starts_with?(filename, "thumb_") and
-              not String.ends_with?(filename, ".gitkeep")
-          end)
+    stats =
+      Enum.reduce(all_raster_filenames, %{thumbnails_created: 0, optimized: 0}, fn filename,
+                                                                                   acc ->
+        # Trouve le dossier contenant une version valide du fichier original
+        source_dir = Enum.find(dirs, &valid_file?(Path.join(&1, filename)))
 
-        stats =
-          Enum.reduce(raster_files, %{thumbnails_created: 0, optimized: 0}, fn filename, acc ->
-            source_file = Path.join(uploads_dir, filename)
-            thumb_name = thumbnail_filename(filename)
-            thumb_file = Path.join(uploads_dir, thumb_name)
-            build_thumb_file = Path.join(build_dir, thumb_name)
+        if is_nil(source_dir) do
+          acc
+        else
+          source_file = Path.join(source_dir, filename)
+          primary_file = Path.join(primary_dir, filename)
 
-            # 1. Optimisation de l'image originale si elle est très lourde (> 250 Ko)
-            acc =
-              if File.regular?(source_file) and File.stat!(source_file).size > 250_000 do
-                temp_target = Path.join(System.tmp_dir!(), "opt_#{filename}")
+          # S'assure que le fichier original est présent dans primary_dir (servi par Plug.Static)
+          if not valid_file?(primary_file) do
+            _ = File.cp(source_file, primary_file)
+          end
 
-                case optimize(source_file, temp_target, generate_thumbnail: false) do
-                  {:ok, ^temp_target} ->
-                    File.cp!(temp_target, source_file)
+          # 1. Optimisation de l'image originale si elle est lourde (> 250 Ko)
+          acc =
+            if valid_file?(primary_file) and File.stat!(primary_file).size > 250_000 do
+              temp_target = Path.join(System.tmp_dir!(), "opt_#{filename}")
 
-                    if File.dir?(build_dir) and Path.expand(build_dir) != uploads_dir do
-                      File.cp!(temp_target, Path.join(build_dir, filename))
-                    end
+              case optimize(primary_file, temp_target, generate_thumbnail: false) do
+                {:ok, ^temp_target} ->
+                  for dir <- dirs do
+                    _ = File.cp(temp_target, Path.join(dir, filename))
+                  end
 
-                    File.rm(temp_target)
-                    Logger.info("[ImageOptimizer] Image originale optimisée : #{filename}")
-                    %{acc | optimized: acc.optimized + 1}
+                  _ = File.rm(temp_target)
+                  Logger.info("[ImageOptimizer] Image originale optimisée : #{filename}")
+                  %{acc | optimized: acc.optimized + 1}
 
-                  _ ->
-                    acc
-                end
-              else
-                acc
+                _ ->
+                  _ = File.rm(temp_target)
+                  acc
+              end
+            else
+              acc
+            end
+
+          # 2. Génération de la miniature WebP si absente ou de taille 0
+          thumb_name = thumbnail_filename(filename)
+          primary_thumb = Path.join(primary_dir, thumb_name)
+
+          acc =
+            if not valid_file?(primary_thumb) do
+              case generate_thumbnail(primary_file, primary_thumb) do
+                {:ok, ^primary_thumb} ->
+                  for extra_dir <- tl(dirs) do
+                    _ = File.cp(primary_thumb, Path.join(extra_dir, thumb_name))
+                  end
+
+                  Logger.info("[ImageOptimizer] Miniature WebP générée : #{thumb_name}")
+                  %{acc | thumbnails_created: acc.thumbnails_created + 1}
+
+                _ ->
+                  _ = File.rm(primary_thumb)
+                  acc
+              end
+            else
+              for extra_dir <- tl(dirs) do
+                extra_thumb = Path.join(extra_dir, thumb_name)
+                if not valid_file?(extra_thumb), do: _ = File.cp(primary_thumb, extra_thumb)
               end
 
-            # 2. Génération de la miniature WebP si absente
-            acc =
-              if File.regular?(source_file) and not File.regular?(thumb_file) do
-                case generate_thumbnail(source_file, thumb_file) do
-                  {:ok, ^thumb_file} ->
-                    if File.dir?(build_dir) and Path.expand(build_dir) != uploads_dir do
-                      File.cp!(thumb_file, build_thumb_file)
-                    end
+              acc
+            end
 
-                    Logger.info("[ImageOptimizer] Miniature WebP générée : #{thumb_name}")
-                    %{acc | thumbnails_created: acc.thumbnails_created + 1}
+          acc
+        end
+      end)
 
-                  _ ->
-                    acc
-                end
-              else
-                # Si la miniature existe dans source_dir mais pas encore dans build_dir
-                if File.regular?(thumb_file) and File.dir?(build_dir) and
-                     Path.expand(build_dir) != uploads_dir and not File.regular?(build_thumb_file) do
-                  File.cp!(thumb_file, build_thumb_file)
-                end
-
-                acc
-              end
-
-            acc
-          end)
-
-        {:ok, stats}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    {:ok, stats}
   end
 end

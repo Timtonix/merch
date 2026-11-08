@@ -236,19 +236,14 @@ defmodule StickerShopWeb.Admin.OrderLive do
   # --- Optimisation & Miniatures WebP ---
 
   def handle_event("optimize_all_uploads", _params, socket) do
-    case ImageOptimizer.optimize_all_uploads() do
-      {:ok, stats} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :info,
-           "Optimisation terminée : #{stats.thumbnails_created} miniature(s) WebP générée(s), #{stats.optimized} image(s) lourde(s) compressée(s)."
-         )}
+    {:ok, stats} = ImageOptimizer.optimize_all_uploads()
 
-      {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, "Erreur lors de l'optimisation : #{inspect(reason)}")}
-    end
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "Optimisation terminée : #{stats.thumbnails_created} miniature(s) WebP générée(s), #{stats.optimized} image(s) lourde(s) compressée(s)."
+     )}
   end
 
   # --- Gestion des Stickers ---
@@ -329,28 +324,7 @@ defmodule StickerShopWeb.Admin.OrderLive do
         clean_ext = if ext in ~w(.svg .png .jpg .jpeg .webp), do: ext, else: ".png"
         filename = "sticker_#{timestamp}_#{random_suffix}#{clean_ext}"
 
-        # 1. Dossier source pour persistance au-delà des recompilations (+ génération auto de thumb_*.webp)
-        source_dir = Path.expand("priv/static/uploads/stickers")
-        File.mkdir_p!(source_dir)
-        source_target = Path.join(source_dir, filename)
-        ImageOptimizer.optimize(path, source_target)
-
-        # 2. Dossier build pour service immédiat par Plug.Static (image HD + miniature WebP)
-        build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
-        File.mkdir_p!(build_dir)
-
-        if Path.expand(build_dir) != source_dir do
-          File.cp!(source_target, Path.join(build_dir, filename))
-
-          thumb_name = ImageOptimizer.thumbnail_filename(filename)
-          source_thumb = Path.join(source_dir, thumb_name)
-
-          if File.regular?(source_thumb) do
-            File.cp!(source_thumb, Path.join(build_dir, thumb_name))
-          end
-        end
-
-        {:ok, "/uploads/stickers/#{filename}"}
+        ImageOptimizer.save_uploaded_sticker(path, filename)
       end)
 
     image_path = List.first(uploaded_files)
@@ -461,18 +435,7 @@ defmodule StickerShopWeb.Admin.OrderLive do
   end
 
   defp remove_uploaded_file(image_path) when is_binary(image_path) do
-    if String.starts_with?(image_path, "/uploads/stickers/") do
-      filename = Path.basename(image_path)
-      thumb_name = ImageOptimizer.thumbnail_filename(filename)
-
-      source_dir = Path.expand("priv/static/uploads/stickers")
-      build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
-
-      File.rm(Path.join(source_dir, filename))
-      File.rm(Path.join(source_dir, thumb_name))
-      File.rm(Path.join(build_dir, filename))
-      File.rm(Path.join(build_dir, thumb_name))
-    end
+    ImageOptimizer.remove_uploaded_sticker(image_path)
   end
 
   defp remove_uploaded_file(_), do: :ok

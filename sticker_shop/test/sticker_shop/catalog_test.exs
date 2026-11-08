@@ -127,12 +127,23 @@ defmodule StickerShop.CatalogTest do
       assert {:error, :cannot_delete_default} = Catalog.delete_category(general_cat)
     end
 
-    test "thumbnail_path/1 resolves WebP thumbnails for uploaded raster images and keeps SVG intact" do
-      assert Catalog.thumbnail_path("/uploads/stickers/sticker_123.png") ==
-               "/uploads/stickers/thumb_sticker_123.webp"
+    test "thumbnail_path/1 resolves WebP thumbnails when present on disk and falls back to original otherwise" do
+      # Si la miniature WebP n'existe pas sur le disque -> fallback sécurisé vers l'image originale (zéro 404)
+      assert Catalog.thumbnail_path("/uploads/stickers/missing_sticker_999.png") ==
+               "/uploads/stickers/missing_sticker_999.png"
 
-      assert Catalog.thumbnail_path("/uploads/stickers/sticker_456.jpg") ==
-               "/uploads/stickers/thumb_sticker_456.webp"
+      # Si la miniature WebP existe et n'est pas vide -> renvoie la miniature WebP
+      priv_uploads =
+        Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
+
+      File.mkdir_p!(priv_uploads)
+      thumb_file = Path.join(priv_uploads, "thumb_sticker_test_123.webp")
+      File.write!(thumb_file, "fake_webp_bytes")
+
+      assert Catalog.thumbnail_path("/uploads/stickers/sticker_test_123.png") ==
+               "/uploads/stickers/thumb_sticker_test_123.webp"
+
+      File.rm(thumb_file)
 
       assert Catalog.thumbnail_path("/uploads/stickers/vector.svg") ==
                "/uploads/stickers/vector.svg"

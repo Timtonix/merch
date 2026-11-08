@@ -166,10 +166,9 @@ defmodule StickerShop.Catalog do
   # --- Thumbnails & Formatting ---
 
   @doc """
-  Returns the lightweight WebP thumbnail URL path for a given `%Sticker{}` or `image_path`.
-  For uploaded raster images (`/uploads/stickers/<name>.<ext>`), returns
-  `/uploads/stickers/thumb_<name>.webp`.
-  For SVG or static asset paths, returns the original `image_path` unchanged.
+  Returns the lightweight WebP thumbnail URL path for a given `%Sticker{}` or `image_path`
+  ONLY if the thumbnail file actually exists on disk and is non-empty.
+  Otherwise, falls back to the original `image_path` so broken/404 links never happen.
   """
   def thumbnail_path(%Sticker{image_path: image_path}), do: thumbnail_path(image_path)
 
@@ -177,8 +176,13 @@ defmodule StickerShop.Catalog do
     ext = Path.extname(image_path) |> String.downcase()
 
     if String.starts_with?(image_path, "/uploads/stickers/") and ext in ~w(.png .jpg .jpeg .webp) do
-      root = image_path |> Path.basename() |> Path.rootname()
-      "/uploads/stickers/thumb_#{root}.webp"
+      thumb_name = StickerShop.Catalog.ImageOptimizer.thumbnail_filename(image_path)
+
+      if StickerShop.Catalog.ImageOptimizer.thumbnail_exists?(thumb_name) do
+        "/uploads/stickers/#{thumb_name}"
+      else
+        image_path
+      end
     else
       image_path
     end
