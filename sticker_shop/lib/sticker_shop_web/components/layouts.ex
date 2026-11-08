@@ -40,9 +40,11 @@ defmodule StickerShopWeb.Layouts do
     <header class="sticky top-0 z-40 border-b border-zinc-200/80 bg-base-100/80 backdrop-blur-md dark:border-zinc-800">
       <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
         <.link navigate={~p"/"} class="group flex items-center gap-3">
-          <span class="flex size-10 items-center justify-center rounded-2xl bg-zinc-900 text-white shadow-sm transition group-hover:scale-105 dark:bg-white dark:text-zinc-900">
-            <.icon name="hero-sparkles" class="size-5" />
-          </span>
+          <img
+            src={~p"/images/hero_logo.png"}
+            alt="Logo"
+            class="size-10 shrink-0 rounded-2xl object-contain transition group-hover:scale-105"
+          />
           <span class="leading-tight">
             <span class="block text-sm font-semibold tracking-tight">Merch interne</span>
             <span class="block text-xs text-zinc-500">Stickers · impression à la demande</span>
