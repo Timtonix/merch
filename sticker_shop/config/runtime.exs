@@ -25,8 +25,11 @@ config :sticker_shop, StickerShopWeb.Endpoint,
 
 config :sticker_shop, :order_notifications,
   from_name: System.get_env("MAILER_FROM_NAME", "Atelier Stickers"),
-  from_email: System.get_env("MAILER_FROM_EMAIL", "commandes@stickers.local"),
-  reply_to: System.get_env("MAILER_REPLY_TO"),
+  from_email:
+    System.get_env("MAILER_FROM_EMAIL") ||
+      System.get_env("SMTP_USER") ||
+      "commandes@stickers.local",
+  reply_to: System.get_env("MAILER_REPLY_TO") || System.get_env("SMTP_USER"),
   wero_phone: System.get_env("PAYMENT_WERO_PHONE"),
   pickup_instructions:
     System.get_env(
@@ -132,34 +135,76 @@ if config_env() == :prod do
   #
   # In production, if SMTP_HOST is configured, we use Swoosh.Adapters.SMTP.
   if smtp_host = System.get_env("SMTP_HOST") do
-    smtp_port = String.to_integer(System.get_env("SMTP_PORT", "587"))
-    smtp_user = System.get_env("SMTP_USER")
-    smtp_password = System.get_env("SMTP_PASSWORD")
+    smtp_host = String.trim(smtp_host)
 
-    auth_mode =
-      if is_binary(smtp_user) and smtp_user != "" do
-        :always
-      else
-        :never
-      end
+    if smtp_host != "" do
+      smtp_port =
+        case Integer.parse(String.trim(System.get_env("SMTP_PORT", "587"))) do
+          {port, _} -> port
+          :error -> 587
+        end
 
-    tls_mode =
-      case System.get_env("SMTP_TLS") do
-        "never" -> :never
-        "always" -> :always
-        _ -> :if_available
-      end
+      smtp_user =
+        case System.get_env("SMTP_USER") do
+          nil -> nil
+          u -> String.trim(u)
+        end
 
-    ssl_enabled = System.get_env("SMTP_SSL") in ~w(true 1) or smtp_port == 465
+      smtp_password =
+        case System.get_env("SMTP_PASSWORD") do
+          nil ->
+            nil
 
-    config :sticker_shop, StickerShop.Mailer,
-      adapter: Swoosh.Adapters.SMTP,
-      relay: smtp_host,
-      port: smtp_port,
-      username: smtp_user,
-      password: smtp_password,
-      ssl: ssl_enabled,
-      tls: tls_mode,
-      auth: auth_mode
+          p ->
+            trimmed = String.trim(p)
+
+            if String.contains?(String.downcase(smtp_host), "gmail") do
+              String.replace(trimmed, " ", "")
+            else
+              trimmed
+            end
+        end
+
+      auth_mode =
+        if is_binary(smtp_user) and smtp_user != "" do
+          :always
+        else
+          :never
+        end
+
+      ssl_enabled = System.get_env("SMTP_SSL") in ~w(true 1) or smtp_port == 465
+
+      tls_mode =
+        case System.get_env("SMTP_TLS") do
+          "never" -> :never
+          "if_available" -> :if_available
+          _ -> if(ssl_enabled, do: :never, else: :always)
+        end
+
+      ssl_opts = [
+        versions: [:"tlsv1.2", :"tlsv1.3"],
+        verify: :verify_peer,
+        cacerts: :public_key.cacerts_get(),
+        server_name_indication: String.to_charlist(smtp_host),
+        depth: 99,
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ]
+      ]
+
+      config :sticker_shop, StickerShop.Mailer,
+        adapter: Swoosh.Adapters.SMTP,
+        relay: smtp_host,
+        port: smtp_port,
+        username: smtp_user,
+        password: smtp_password,
+        ssl: ssl_enabled,
+        tls: tls_mode,
+        tls_options: ssl_opts,
+        sockopts: if(ssl_enabled, do: ssl_opts, else: []),
+        auth: auth_mode,
+        no_mx_lookups: true,
+        retries: 1
+    end
   end
 end

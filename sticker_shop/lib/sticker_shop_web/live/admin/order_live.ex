@@ -108,8 +108,13 @@ defmodule StickerShopWeb.Admin.OrderLive do
              "Email (#{type}) renvoyé à #{order.customer_email} pour la commande ##{order.id}."
            )}
 
-        {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Erreur lors de l'envoi de l'email.")}
+        {:error, reason} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Erreur lors de l'envoi de l'email : #{inspect(reason)}"
+           )}
       end
     else
       _ ->

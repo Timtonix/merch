@@ -30,10 +30,12 @@ defmodule StickerShop.Orders.OrderNotifier do
       from_email:
         Keyword.get(configured, :from_email) ||
           System.get_env("MAILER_FROM_EMAIL") ||
+          System.get_env("SMTP_USER") ||
           "commandes@stickers.local",
       reply_to:
         Keyword.get(configured, :reply_to) ||
-          System.get_env("MAILER_REPLY_TO"),
+          System.get_env("MAILER_REPLY_TO") ||
+          System.get_env("SMTP_USER"),
       wero_phone:
         Keyword.get(configured, :wero_phone) ||
           System.get_env("PAYMENT_WERO_PHONE"),
@@ -87,18 +89,41 @@ defmodule StickerShop.Orders.OrderNotifier do
   defp maybe_put_reply_to(email, reply_to), do: reply_to(email, reply_to)
 
   defp deliver_safely(email, context) do
-    case Mailer.deliver(email) do
-      {:ok, metadata} ->
-        {:ok, metadata}
+    mailer_cfg = Application.get_env(:sticker_shop, StickerShop.Mailer, [])
+    adapter = Keyword.get(mailer_cfg, :adapter)
+    local_enabled = Application.get_env(:swoosh, :local, true)
 
-      {:error, reason} ->
-        Logger.error("Échec d'envoi de l'email (#{context}) : #{inspect(reason)}")
-        {:error, reason}
+    if adapter == Swoosh.Adapters.Local and local_enabled == false do
+      reason = "SMTP_HOST n'est pas configuré dans les variables d'environnement du serveur"
+      Logger.error("[Mailer] Échec d'envoi (#{context}) : #{reason}")
+      {:error, reason}
+    else
+      Logger.info("[Mailer] Envoi de l'email (#{context}) via #{inspect(adapter)}...")
+
+      case Mailer.deliver(email) do
+        {:ok, metadata} ->
+          Logger.info("[Mailer] Email envoyé avec succès (#{context})")
+          {:ok, metadata}
+
+        {:error, reason} ->
+          Logger.error("[Mailer] Échec d'envoi de l'email (#{context}) : #{inspect(reason)}")
+          {:error, reason}
+      end
     end
   rescue
     exception ->
-      Logger.error("Exception lors de l'envoi de l'email (#{context}) : #{inspect(exception)}")
+      Logger.error(
+        "[Mailer] Exception lors de l'envoi de l'email (#{context}) : #{inspect(exception)}"
+      )
+
       {:error, exception}
+  catch
+    kind, reason ->
+      Logger.error(
+        "[Mailer] Crash (#{kind}) lors de l'envoi de l'email (#{context}) : #{inspect(reason)}"
+      )
+
+      {:error, {kind, reason}}
   end
 
   defp confirmation_html(order, info) do
