@@ -262,4 +262,53 @@ defmodule StickerShopWeb.ShopLiveTest do
     assert [order] = Orders.list_orders()
     assert order.notes == "Paiement prévu : Virement (RIB demandé) · Dispo vendredi midi"
   end
+
+  test "supports custom public and password-protected categories in shop filter", %{conn: conn} do
+    {:ok, _public_cat} = Catalog.create_category(%{name: "Asso", password: ""})
+    {:ok, _private_cat} = Catalog.create_category(%{name: "VIP", password: "vip99"})
+
+    {:ok, asso_sticker} =
+      Catalog.create_sticker(%{
+        name: "Asso Sticker",
+        category: "asso",
+        unit_price_cents: 20,
+        image_path: "/images/stickers/phoenix.svg",
+        width_mm: 60,
+        height_mm: 60
+      })
+
+    {:ok, vip_sticker} =
+      Catalog.create_sticker(%{
+        name: "VIP Sticker",
+        category: "vip",
+        unit_price_cents: 20,
+        image_path: "/images/stickers/elixir.svg",
+        width_mm: 60,
+        height_mm: 60
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    # Le sticker de la catégorie publique "asso" est visible dès le départ, celui de "vip" est masqué
+    assert has_element?(view, "#sticker-inc-#{asso_sticker.id}")
+    refute has_element?(view, "#sticker-inc-#{vip_sticker.id}")
+
+    # Filtre sur la catégorie publique "asso" sans mot de passe
+    view |> element("#filter-category-asso") |> render_click()
+    assert has_element?(view, "#sticker-inc-#{asso_sticker.id}")
+
+    # Clic sur la catégorie protégée "vip" -> ouvre la modale de mot de passe
+    view |> element("#filter-category-vip") |> render_click()
+    assert has_element?(view, "#bicus-password-modal")
+    assert render(view) =~ "Catégorie VIP protégée"
+
+    # Déverrouillage avec "vip99"
+    view
+    |> form("#bicus-password-modal form", %{"password" => "vip99"})
+    |> render_submit()
+
+    refute has_element?(view, "#bicus-password-modal")
+    assert render(view) =~ "Catégorie VIP déverrouillée"
+    assert has_element?(view, "#sticker-inc-#{vip_sticker.id}")
+  end
 end

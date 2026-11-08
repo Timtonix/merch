@@ -352,8 +352,11 @@
               class="flex items-center gap-3 overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50/60 p-2.5 dark:border-zinc-800 dark:bg-zinc-800/40"
             >
               <img
-                src={item.sticker.image_path}
+                src={Catalog.thumbnail_path(item.sticker.image_path)}
+                onerror={"this.onerror=null;this.src='#{item.sticker.image_path}'"}
                 alt={item.sticker.name}
+                loading="lazy"
+                decoding="async"
                 class="size-12 shrink-0 rounded-xl bg-white p-1.5 object-contain drop-shadow-2xs dark:bg-zinc-900"
               />
               <div class="min-w-0 flex-1">
@@ -376,154 +379,279 @@
     <% end %>
 
     <%= if @tab == :stickers do %>
-      <!-- Onglet Catalogue & Upload -->
-      <div class="grid gap-8 lg:grid-cols-[22rem_minmax(0,1fr)]">
-        <!-- Formulaire d'ajout / Upload de sticker -->
-        <aside class="rounded-3xl border border-zinc-200/80 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div class="flex items-center gap-2">
-            <span class="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-              <.icon name="hero-plus" class="size-4" />
-            </span>
-            <h2 class="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Nouveau sticker
-            </h2>
-          </div>
-          <p class="mt-1 text-xs text-zinc-500">
-            Téléverse ton image haute définition (SVG recommandé, ou PNG/JPG). Format par défaut : 60×60 mm.
-          </p>
-
-          <.form
-            for={@new_sticker_form}
-            id="new-sticker-form"
-            phx-change="validate_sticker"
-            phx-submit="save_sticker"
-            class="mt-5 space-y-4"
-          >
-            <.input
-              field={@new_sticker_form[:name]}
-              type="text"
-              label="Nom du sticker"
-              placeholder="ex: Elixir Drop, Phoenix Logo..."
-              required
-            />
-
-            <.input
-              field={@new_sticker_form[:category]}
-              type="select"
-              label="Catégorie"
-              options={[{"Général (public)", "general"}, {"Bicus (protégé par code)", "bicus"}]}
-            />
-
-            <.input
-              field={@new_sticker_form[:price_euros]}
-              type="text"
-              label="Prix unitaire de base (€)"
-              placeholder="ex: 0.20 ou 0.30"
-              required
-            />
-
-            <div class="grid grid-cols-2 gap-3">
-              <.input
-                field={@new_sticker_form[:width_mm]}
-                type="number"
-                label="Largeur (mm)"
-                placeholder="60"
-                min="10"
-                max="200"
-                required
-              />
-              <.input
-                field={@new_sticker_form[:height_mm]}
-                type="number"
-                label="Hauteur (mm)"
-                placeholder="60"
-                min="10"
-                max="200"
-                required
-              />
+      <!-- Onglet Catalogue, Catégories & Upload -->
+      <div class="grid items-start gap-8 lg:grid-cols-[24rem_minmax(0,1fr)]">
+        <div class="space-y-6">
+          <!-- Formulaire d'ajout / Upload de sticker -->
+          <aside class="rounded-3xl border border-zinc-200/80 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="flex items-center gap-2">
+              <span class="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
+                <.icon name="hero-plus" class="size-4" />
+              </span>
+              <h2 class="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                Nouveau sticker
+              </h2>
             </div>
+            <p class="mt-1 text-xs text-zinc-500">
+              Téléverse ton image haute définition (SVG, PNG ou JPG). Une miniature WebP ultra-légère sera générée automatiquement pour la boutique.
+            </p>
 
-            <!-- Upload de fichier image LiveView -->
-            <div class="space-y-2">
-              <label class="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                Fichier image (SVG, PNG, JPG)
-              </label>
+            <.form
+              for={@new_sticker_form}
+              id="new-sticker-form"
+              phx-change="validate_sticker"
+              phx-submit="save_sticker"
+              class="mt-5 space-y-4"
+            >
+              <.input
+                field={@new_sticker_form[:name]}
+                type="text"
+                label="Nom du sticker"
+                placeholder="ex: Elixir Drop, Phoenix Logo..."
+                required
+              />
 
-              <div
-                class="rounded-2xl border-2 border-dashed border-zinc-300 p-5 text-center transition hover:border-zinc-400 hover:bg-zinc-50/50 dark:border-zinc-700 dark:hover:border-zinc-600 dark:hover:bg-zinc-800/40"
-                phx-drop-target={@uploads.sticker_image.ref}
-              >
-                <.live_file_input upload={@uploads.sticker_image} class="sr-only" />
-                <label
-                  for={@uploads.sticker_image.ref}
-                  class="flex flex-col items-center justify-center cursor-pointer gap-2"
-                >
-                  <span class="flex size-10 items-center justify-center rounded-xl bg-zinc-100 text-zinc-600 transition group-hover:scale-105 dark:bg-zinc-800 dark:text-zinc-300">
-                    <.icon name="hero-arrow-up-tray" class="size-5" />
-                  </span>
-                  <span class="text-xs font-semibold text-zinc-900 underline dark:text-zinc-100">
-                    Choisir une image (PNG, JPG, SVG)
-                  </span>
-                  <span class="text-[11px] text-zinc-500">ou glisser-déposer le fichier ici (max 15 Mo)</span>
-                </label>
+              <.input
+                field={@new_sticker_form[:category]}
+                type="select"
+                label="Catégorie"
+                options={category_select_options(@categories)}
+              />
+
+              <.input
+                field={@new_sticker_form[:price_euros]}
+                type="text"
+                label="Prix unitaire de base (€)"
+                placeholder="ex: 0.20 ou 0.30"
+                required
+              />
+
+              <div class="grid grid-cols-2 gap-3">
+                <.input
+                  field={@new_sticker_form[:width_mm]}
+                  type="number"
+                  label="Largeur (mm)"
+                  placeholder="60"
+                  min="10"
+                  max="200"
+                  required
+                />
+                <.input
+                  field={@new_sticker_form[:height_mm]}
+                  type="number"
+                  label="Hauteur (mm)"
+                  placeholder="60"
+                  min="10"
+                  max="200"
+                  required
+                />
               </div>
 
-              <!-- Prévisualisation de l'upload -->
-              <%= for entry <- @uploads.sticker_image.entries do %>
-                <div class="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-2.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
-                  <.live_img_preview
-                    entry={entry}
-                    class="size-12 rounded-xl object-contain bg-white p-1 drop-shadow-sm dark:bg-zinc-900"
-                  />
-                  <div class="min-w-0 flex-1 truncate">
-                    <p class="font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                      {entry.client_name}
-                    </p>
-                    <p class="text-[11px] text-zinc-500">
-                      {Float.round(entry.client_size / 1024, 1)} Ko
-                    </p>
-                    <!-- Barre de progression -->
-                    <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-                      <div
-                        class="h-full bg-emerald-500 transition-all duration-200"
-                        style={"width: #{entry.progress}%"}
-                      >
+              <!-- Upload de fichier image LiveView -->
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  Fichier image (SVG, PNG, JPG)
+                </label>
+
+                <div
+                  class="rounded-2xl border-2 border-dashed border-zinc-300 p-5 text-center transition hover:border-zinc-400 hover:bg-zinc-50/50 dark:border-zinc-700 dark:hover:border-zinc-600 dark:hover:bg-zinc-800/40"
+                  phx-drop-target={@uploads.sticker_image.ref}
+                >
+                  <.live_file_input upload={@uploads.sticker_image} class="sr-only" />
+                  <label
+                    for={@uploads.sticker_image.ref}
+                    class="flex flex-col items-center justify-center cursor-pointer gap-2"
+                  >
+                    <span class="flex size-10 items-center justify-center rounded-xl bg-zinc-100 text-zinc-600 transition group-hover:scale-105 dark:bg-zinc-800 dark:text-zinc-300">
+                      <.icon name="hero-arrow-up-tray" class="size-5" />
+                    </span>
+                    <span class="text-xs font-semibold text-zinc-900 underline dark:text-zinc-100">
+                      Choisir une image (PNG, JPG, SVG)
+                    </span>
+                    <span class="text-[11px] text-zinc-500">
+                      ou glisser-déposer le fichier ici (max 15 Mo)
+                    </span>
+                  </label>
+                </div>
+
+                <!-- Prévisualisation de l'upload -->
+                <%= for entry <- @uploads.sticker_image.entries do %>
+                  <div class="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-2.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                    <.live_img_preview
+                      entry={entry}
+                      class="size-12 rounded-xl object-contain bg-white p-1 drop-shadow-sm dark:bg-zinc-900"
+                    />
+                    <div class="min-w-0 flex-1 truncate">
+                      <p class="font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                        {entry.client_name}
+                      </p>
+                      <p class="text-[11px] text-zinc-500">
+                        {Float.round(entry.client_size / 1024, 1)} Ko
+                      </p>
+                      <!-- Barre de progression -->
+                      <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                        <div
+                          class="h-full bg-emerald-500 transition-all duration-200"
+                          style={"width: #{entry.progress}%"}
+                        >
+                        </div>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      phx-click="cancel_upload"
+                      phx-value-ref={entry.ref}
+                      class="rounded-lg p-1 text-zinc-400 hover:bg-zinc-200 hover:text-rose-500 dark:hover:bg-zinc-700"
+                      aria-label="Annuler"
+                    >
+                      <.icon name="hero-x-mark" class="size-4" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    phx-click="cancel_upload"
-                    phx-value-ref={entry.ref}
-                    class="rounded-lg p-1 text-zinc-400 hover:bg-zinc-200 hover:text-rose-500 dark:hover:bg-zinc-700"
-                    aria-label="Annuler"
-                  >
-                    <.icon name="hero-x-mark" class="size-4" />
-                  </button>
-                </div>
-              <% end %>
+                <% end %>
 
-              <%= for err <- upload_errors(@uploads.sticker_image) do %>
-                <p class="text-xs text-rose-500 font-medium">Erreur upload : {inspect(err)}</p>
-              <% end %>
+                <%= for err <- upload_errors(@uploads.sticker_image) do %>
+                  <p class="text-xs text-rose-500 font-medium">Erreur upload : {inspect(err)}</p>
+                <% end %>
+              </div>
+
+              <button
+                id="save-sticker-btn"
+                type="submit"
+                class="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                Ajouter au catalogue
+              </button>
+            </.form>
+          </aside>
+
+          <!-- Gestion des catégories (publiques ou protégées par mot de passe) -->
+          <aside
+            id="categories-management-card"
+            class="rounded-3xl border border-zinc-200/80 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+          >
+            <div class="flex items-center gap-2">
+              <span class="flex size-7 items-center justify-center rounded-lg bg-amber-500 text-white">
+                <.icon name="hero-tag" class="size-4" />
+              </span>
+              <h2 class="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                Catégories ({length(@categories)})
+              </h2>
             </div>
+            <p class="mt-1 text-xs text-zinc-500">
+              Crée de nouvelles catégories (ex: BDE, Asso, Événement). Laisse le mot de passe vide pour une catégorie publique, ou définis un code pour la rendre privée 🔒.
+            </p>
 
-            <button
-              id="save-sticker-btn"
-              type="submit"
-              class="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+            <!-- Liste des catégories existantes -->
+            <ul id="admin-categories-list" class="mt-4 space-y-2.5">
+              <li
+                :for={cat <- @categories}
+                id={"admin-category-#{cat.slug}"}
+                class="rounded-2xl border border-zinc-200/80 bg-zinc-50/70 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-800/40"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="truncate font-bold text-zinc-900 dark:text-zinc-100">
+                      {cat.name}
+                    </span>
+                    <%= if Category.protected?(cat) do %>
+                      <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        <.icon name="hero-lock-closed" class="size-3" /> Privé
+                      </span>
+                    <% else %>
+                      <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                        Public
+                      </span>
+                    <% end %>
+                  </div>
+
+                  <%= if cat.slug != "general" do %>
+                    <button
+                      id={"delete-category-#{cat.slug}"}
+                      type="button"
+                      phx-click="delete_category"
+                      phx-value-id={cat.id}
+                      data-confirm={"Supprimer la catégorie « #{cat.name} » ? Ses stickers seront basculés dans Général."}
+                      class="rounded-lg p-1 text-zinc-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                      title="Supprimer la catégorie"
+                    >
+                      <.icon name="hero-trash" class="size-3.5" />
+                    </button>
+                  <% end %>
+                </div>
+
+                <%= if cat.slug != "general" do %>
+                  <form
+                    id={"category-password-form-#{cat.slug}"}
+                    phx-submit="update_category_password"
+                    class="mt-2 flex items-center gap-1.5"
+                  >
+                    <input type="hidden" name="category_id" value={cat.id} />
+                    <input
+                      type="text"
+                      name="password"
+                      value={cat.password || ""}
+                      placeholder="Vide = public, ou mot de passe..."
+                      class="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] text-zinc-800 placeholder-zinc-400 focus:border-zinc-900 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                    />
+                    <button
+                      type="submit"
+                      class="shrink-0 rounded-lg bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900"
+                    >
+                      Enregistrer
+                    </button>
+                  </form>
+                <% end %>
+              </li>
+            </ul>
+
+            <!-- Formulaire de création d'une nouvelle catégorie -->
+            <.form
+              for={@new_category_form}
+              id="new-category-form"
+              phx-change="validate_category"
+              phx-submit="save_category"
+              class="mt-4 space-y-3 border-t border-zinc-200/80 pt-4 dark:border-zinc-800"
             >
-              Ajouter au catalogue
-            </button>
-          </.form>
-        </aside>
+              <.input
+                field={@new_category_form[:name]}
+                type="text"
+                label="Nouvelle catégorie"
+                placeholder="ex: BDE, Fanfare, Privé..."
+                required
+              />
+              <.input
+                field={@new_category_form[:password]}
+                type="text"
+                label="Mot de passe (optionnel)"
+                placeholder="Laisser vide si publique"
+              />
+              <button
+                id="save-category-btn"
+                type="submit"
+                class="w-full rounded-xl border border-zinc-900 bg-zinc-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-zinc-700 dark:border-white dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                Créer la catégorie
+              </button>
+            </.form>
+          </aside>
+        </div>
 
         <!-- Grille des stickers existants -->
         <section class="space-y-4">
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
               Stickers enregistrés ({length(@stickers)})
             </h2>
+
+            <button
+              id="optimize-uploads-btn"
+              type="button"
+              phx-click="optimize_all_uploads"
+              class="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-xs font-semibold text-zinc-700 shadow-2xs transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <.icon name="hero-bolt" class="size-4 text-amber-500" />
+              <span>Optimiser & générer les miniatures WebP</span>
+            </button>
           </div>
 
           <div
@@ -554,22 +682,31 @@
 
                 <div class="flex h-32 w-full items-center justify-center overflow-hidden px-3">
                   <img
-                    src={sticker.image_path}
+                    src={Catalog.thumbnail_path(sticker.image_path)}
+                    onerror={"this.onerror=null;this.src='#{sticker.image_path}'"}
                     alt={sticker.name}
+                    loading="lazy"
+                    decoding="async"
                     class="max-h-28 max-w-full object-contain drop-shadow"
                   />
                 </div>
 
                 <div class="z-10 flex items-center">
-                  <%= if sticker.category == "bicus" do %>
-                    <span class="rounded-full bg-amber-500/90 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-2xs">
-                      Bicus 🔒
-                    </span>
-                  <% else %>
-                    <span class="rounded-full bg-zinc-700/80 px-2 py-0.5 text-[9px] font-medium uppercase tracking-wider text-white shadow-2xs">
-                      Général
-                    </span>
-                  <% end %>
+                  <span class={[
+                    "rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-2xs",
+                    cond do
+                      sticker_category_protected?(@categories_by_slug, sticker.category) ->
+                        "bg-amber-500/90"
+
+                      sticker.category == "general" ->
+                        "bg-zinc-700/80 font-medium"
+
+                      true ->
+                        "bg-indigo-600/90"
+                    end
+                  ]}>
+                    {sticker_category_badge(@categories_by_slug, sticker.category)}
+                  </span>
                 </div>
               </div>
 
@@ -616,43 +753,34 @@
               </div>
 
               <!-- Modification de la catégorie après importation -->
-              <div class="mt-3 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3 text-xs dark:border-zinc-800/80">
+              <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-3 text-xs dark:border-zinc-800/80">
                 <span class="text-[11px] font-medium text-zinc-500">Catégorie :</span>
-                <div class="flex items-center gap-1 rounded-xl bg-zinc-100 p-0.5 dark:bg-zinc-800">
+                <div class="flex flex-wrap items-center gap-1 rounded-xl bg-zinc-100 p-0.5 dark:bg-zinc-800">
                   <button
-                    id={"sticker-#{sticker.id}-cat-general"}
+                    :for={cat <- @categories}
+                    id={"sticker-#{sticker.id}-cat-#{cat.slug}"}
                     type="button"
                     phx-click="set_sticker_category"
                     phx-value-id={sticker.id}
-                    phx-value-category="general"
+                    phx-value-category={cat.slug}
                     class={[
-                      "rounded-lg px-2.5 py-1 text-[11px] font-semibold transition",
-                      if(sticker.category != "bicus",
-                        do: "bg-white text-zinc-900 shadow-xs dark:bg-zinc-900 dark:text-white",
-                        else:
+                      "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition",
+                      cond do
+                        sticker.category == cat.slug and Category.protected?(cat) ->
+                          "bg-amber-500 text-white shadow-xs"
+
+                        sticker.category == cat.slug ->
+                          "bg-white text-zinc-900 shadow-xs dark:bg-zinc-900 dark:text-white"
+
+                        true ->
                           "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-                      )
+                      end
                     ]}
                   >
-                    Général
-                  </button>
-                  <button
-                    id={"sticker-#{sticker.id}-cat-bicus"}
-                    type="button"
-                    phx-click="set_sticker_category"
-                    phx-value-id={sticker.id}
-                    phx-value-category="bicus"
-                    class={[
-                      "inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition",
-                      if(sticker.category == "bicus",
-                        do: "bg-amber-500 text-white shadow-xs",
-                        else:
-                          "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-                      )
-                    ]}
-                  >
-                    <.icon name="hero-lock-closed" class="size-3" />
-                    <span>Bicus</span>
+                    <%= if Category.protected?(cat) do %>
+                      <.icon name="hero-lock-closed" class="size-2.5" />
+                    <% end %>
+                    <span>{cat.name}</span>
                   </button>
                 </div>
               </div>

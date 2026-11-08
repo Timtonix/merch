@@ -152,7 +152,9 @@ defmodule StickerShop.Catalog do
   def delete_category(%Category{} = category) do
     Repo.transaction(fn ->
       from(s in Sticker, where: s.category == ^category.slug)
-      |> Repo.update_all(set: [category: "general", updated_at: DateTime.utc_now() |> DateTime.truncate(:second)])
+      |> Repo.update_all(
+        set: [category: "general", updated_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+      )
 
       case Repo.delete(category) do
         {:ok, deleted} -> deleted

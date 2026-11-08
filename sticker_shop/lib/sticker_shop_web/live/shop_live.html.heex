@@ -24,7 +24,7 @@
     </p>
   </section>
 
-  <!-- Barre de filtres (Catégories + Recherche instantanée) -->
+  <!-- Barre de filtres (Catégories dynamiques + Recherche instantanée) -->
   <div class="flex flex-col gap-3 border-b border-zinc-200/80 pb-4 pt-2 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
     <div class="flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-100 p-1 dark:bg-zinc-800/80">
       <button
@@ -45,47 +45,36 @@
       </button>
 
       <button
-        id="filter-category-general"
+        :for={cat <- @categories}
+        id={"filter-category-#{cat.slug}"}
         type="button"
         phx-click="filter_category"
-        phx-value-category="general"
+        phx-value-category={cat.slug}
         class={[
           "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition",
-          if(@selected_category == "general",
+          if(@selected_category == cat.slug,
             do: "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-white",
             else: "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
           )
         ]}
       >
-        <.icon name="hero-tag" class="size-3.5" />
-        <span>Général</span>
-      </button>
-
-      <button
-        id="filter-category-bicus"
-        type="button"
-        phx-click="filter_category"
-        phx-value-category="bicus"
-        class={[
-          "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition",
-          if(@selected_category == "bicus",
-            do: "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-white",
-            else: "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-          )
-        ]}
-      >
-        <%= if "bicus" in @unlocked_categories do %>
-          <.icon name="hero-lock-open" class="size-3.5 text-emerald-600 dark:text-emerald-400" />
-          <span>Bicus</span>
-          <span class="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-            Déverrouillé
-          </span>
+        <%= if Category.protected?(cat) do %>
+          <%= if cat.slug in @unlocked_categories do %>
+            <.icon name="hero-lock-open" class="size-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>{cat.name}</span>
+            <span class="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+              Déverrouillé
+            </span>
+          <% else %>
+            <.icon name="hero-lock-closed" class="size-3.5 text-amber-500" />
+            <span>{cat.name}</span>
+            <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              Privé
+            </span>
+          <% end %>
         <% else %>
-          <.icon name="hero-lock-closed" class="size-3.5 text-amber-500" />
-          <span>Bicus</span>
-          <span class="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            Privé
-          </span>
+          <.icon name="hero-tag" class="size-3.5" />
+          <span>{cat.name}</span>
         <% end %>
       </button>
     </div>
@@ -149,6 +138,7 @@
         <% cur_price = Formats.price_for(sticker.unit_price_cents, cur_format_id) %>
         <% cur_qty = quantity(@quantities, sticker.id, cur_format_id) %>
         <% total_qty = total_sticker_quantity(@quantities, sticker.id) %>
+        <% thumb_url = Catalog.thumbnail_path(sticker.image_path) %>
 
         <!-- En-tête visuel du sticker : barre de badges dédiée + boîte d'image strictement bornée -->
         <div class="relative flex h-56 w-full shrink-0 flex-col justify-between overflow-hidden border-b border-zinc-100 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.95),transparent_70%),linear-gradient(180deg,#f4f4f5,#fafafa)] dark:border-zinc-800/80 dark:bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.07),transparent_70%),linear-gradient(180deg,#18181b,#09090b)]">
@@ -169,10 +159,26 @@
                 </span>
               <% end %>
 
-              <%= if sticker.category == "bicus" do %>
-                <span class="inline-flex items-center gap-1 truncate rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-2xs">
-                  <.icon name="hero-user-group" class="size-3 shrink-0" />
-                  <span class="truncate">Bicus</span>
+              <%= if sticker.category != "general" do %>
+                <span class={[
+                  "inline-flex items-center gap-1 truncate rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-2xs",
+                  if(category_protected?(@categories_by_slug, sticker.category),
+                    do: "bg-amber-500",
+                    else: "bg-indigo-600"
+                  )
+                ]}>
+                  <.icon
+                    name={
+                      if(category_protected?(@categories_by_slug, sticker.category),
+                        do: "hero-user-group",
+                        else: "hero-tag"
+                      )
+                    }
+                    class="size-3 shrink-0"
+                  />
+                  <span class="truncate">
+                    {category_name(@categories_by_slug, sticker.category)}
+                  </span>
                 </span>
               <% end %>
 
@@ -197,9 +203,11 @@
             class="flex h-40 w-full cursor-pointer items-center justify-center overflow-hidden px-6 pb-4 pt-1"
           >
             <img
-              src={sticker.image_path}
+              src={thumb_url}
+              onerror={"this.onerror=null;this.src='#{sticker.image_path}'"}
               alt={sticker.name}
               loading="lazy"
+              decoding="async"
               class="max-h-32 w-auto max-w-full object-contain drop-shadow-md transition duration-300 group-hover:scale-105"
             />
           </div>
@@ -442,8 +450,11 @@
             class="flex items-center justify-between gap-2.5 rounded-2xl border border-zinc-100 bg-zinc-50/70 p-2.5 text-sm dark:border-zinc-800 dark:bg-zinc-800/40"
           >
             <img
-              src={line.sticker.image_path}
+              src={Catalog.thumbnail_path(line.sticker.image_path)}
+              onerror={"this.onerror=null;this.src='#{line.sticker.image_path}'"}
               alt={line.sticker.name}
+              loading="lazy"
+              decoding="async"
               class="size-10 shrink-0 rounded-xl bg-white p-1 object-contain shadow-2xs dark:bg-zinc-900"
             />
             <div class="min-w-0 flex-1">
@@ -624,8 +635,10 @@
     </div>
   <% end %>
 
-  <!-- Modal de déverrouillage de la catégorie Bicus -->
+  <!-- Modal de déverrouillage d'une catégorie protégée -->
   <%= if @show_password_modal do %>
+    <% modal_cat_name =
+      if @pending_unlock_category, do: @pending_unlock_category.name, else: "Bicus" %>
     <div
       id="bicus-password-modal-wrapper"
       class="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -661,10 +674,10 @@
 
         <div class="mt-4">
           <h3 class="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Catégorie Bicus protégée
+            Catégorie {modal_cat_name} protégée
           </h3>
           <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Cette section contient les visuels et stickers de l'équipe Bicus. Saisis le mot de passe pour y accéder.
+            Cette section est réservée et contient les visuels de la catégorie « {modal_cat_name} ». Saisis le mot de passe pour y accéder.
           </p>
         </div>
 

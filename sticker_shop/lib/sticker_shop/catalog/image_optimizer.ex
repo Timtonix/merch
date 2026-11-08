@@ -50,12 +50,18 @@ defmodule StickerShop.Catalog.ImageOptimizer do
               {:ok, thumb_path}
 
             {:error, reason} ->
-              Logger.warning("Échec d'écriture miniature WebP (#{thumb_path}) : #{inspect(reason)}")
+              Logger.warning(
+                "Échec d'écriture miniature WebP (#{thumb_path}) : #{inspect(reason)}"
+              )
+
               {:error, reason}
           end
 
         {:error, reason} ->
-          Logger.warning("Impossible d'ouvrir l'image pour miniature (#{source_path}) : #{inspect(reason)}")
+          Logger.warning(
+            "Impossible d'ouvrir l'image pour miniature (#{source_path}) : #{inspect(reason)}"
+          )
+
           {:error, reason}
       end
     else

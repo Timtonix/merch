@@ -97,9 +97,48 @@ defmodule StickerShop.CatalogTest do
       assert bicus in bicus_only
       refute general in bicus_only
 
-      categories = Catalog.list_categories()
+      categories = Catalog.list_categories() |> Enum.map(& &1.slug)
       assert "general" in categories
       assert "bicus" in categories
+    end
+
+    test "supports dynamic categories (public and password-protected) and reassigns stickers on delete" do
+      alias StickerShop.Catalog.Category
+
+      {:ok, public_cat} = Catalog.create_category(%{name: "BDE Sciences", password: ""})
+      assert public_cat.slug == "bde-sciences"
+      refute Category.protected?(public_cat)
+
+      {:ok, private_cat} = Catalog.create_category(%{name: "Fanfare", password: "secret42"})
+      assert private_cat.slug == "fanfare"
+      assert Category.protected?(private_cat)
+      assert Category.valid_password?(private_cat, "secret42")
+      refute Category.valid_password?(private_cat, "wrong")
+
+      {:ok, fanfare_sticker} =
+        Catalog.create_sticker(Map.merge(@valid_attrs, %{name: "Trompette", category: "fanfare"}))
+
+      # Suppression de la catégorie Fanfare -> le sticker repasse en "general"
+      assert {:ok, _} = Catalog.delete_category(private_cat)
+      assert Catalog.get_sticker!(fanfare_sticker.id).category == "general"
+
+      # La catégorie par défaut "general" ne peut pas être supprimée
+      general_cat = Catalog.get_category_by_slug("general")
+      assert {:error, :cannot_delete_default} = Catalog.delete_category(general_cat)
+    end
+
+    test "thumbnail_path/1 resolves WebP thumbnails for uploaded raster images and keeps SVG intact" do
+      assert Catalog.thumbnail_path("/uploads/stickers/sticker_123.png") ==
+               "/uploads/stickers/thumb_sticker_123.webp"
+
+      assert Catalog.thumbnail_path("/uploads/stickers/sticker_456.jpg") ==
+               "/uploads/stickers/thumb_sticker_456.webp"
+
+      assert Catalog.thumbnail_path("/uploads/stickers/vector.svg") ==
+               "/uploads/stickers/vector.svg"
+
+      assert Catalog.thumbnail_path("/images/stickers/phoenix.svg") ==
+               "/images/stickers/phoenix.svg"
     end
   end
 
@@ -140,8 +179,17 @@ defmodule StickerShop.CatalogTest do
       assert w <= 800
       assert h <= 800
 
+      # Vérifie que la miniature WebP a également été générée automatiquement
+      expected_thumb = Path.join(System.tmp_dir!(), "thumb_test_optimized.webp")
+      assert File.exists?(expected_thumb)
+      {:ok, thumb_img} = Image.open(expected_thumb)
+      {tw, th, _} = Image.shape(thumb_img)
+      assert tw <= 360
+      assert th <= 360
+
       File.rm(tmp_src)
       File.rm(tmp_dst)
+      File.rm(expected_thumb)
     end
 
     test "preserves SVG files without modification" do

@@ -2,8 +2,7 @@ defmodule StickerShopWeb.Admin.OrderLive do
   use StickerShopWeb, :live_view
 
   alias StickerShop.Catalog
-  alias StickerShop.Catalog.Formats
-  alias StickerShop.Catalog.ImageOptimizer
+  alias StickerShop.Catalog.{Category, Formats, ImageOptimizer}
   alias StickerShop.Orders
   alias StickerShop.Orders.OrderNotifier
   alias StickerShop.Printing.SheetPacker
@@ -12,6 +11,8 @@ defmodule StickerShopWeb.Admin.OrderLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    categories = Catalog.list_categories()
+
     socket =
       socket
       |> assign(:page_title, "Administration · Merch")
@@ -20,8 +21,11 @@ defmodule StickerShopWeb.Admin.OrderLive do
       |> assign(:status_filter, :pending)
       |> refresh_stats()
       |> assign(:orders, Orders.list_pending_orders())
+      |> assign(:categories, categories)
+      |> assign(:categories_by_slug, Map.new(categories, &{&1.slug, &1}))
       |> assign(:stickers, Catalog.list_stickers())
       |> assign_new_sticker_form(%{})
+      |> assign_new_category_form(%{})
       |> allow_upload(:sticker_image,
         accept: ~w(.svg .png .jpg .jpeg .webp),
         max_entries: 1,
@@ -144,6 +148,111 @@ defmodule StickerShopWeb.Admin.OrderLive do
     end
   end
 
+  # --- Gestion des Catégories ---
+
+  def handle_event("validate_category", %{"new_category" => params}, socket) do
+    {:noreply, assign_new_category_form(socket, params)}
+  end
+
+  def handle_event("save_category", %{"new_category" => params}, socket) do
+    case Catalog.create_category(params) do
+      {:ok, category} ->
+        mode_label = if Category.protected?(category), do: "privée 🔒", else: "publique"
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Catégorie « #{category.name} » (#{mode_label}) créée !")
+         |> refresh_categories()
+         |> assign_new_category_form(%{})}
+
+      {:error, changeset} ->
+        msg =
+          changeset
+          |> Ecto.Changeset.traverse_errors(fn {m, _} -> m end)
+          |> Enum.map(fn {k, v} -> "#{k}: #{Enum.join(v, ", ")}" end)
+          |> Enum.join(" · ")
+
+        {:noreply,
+         socket
+         |> put_flash(:error, "Impossible de créer la catégorie (#{msg}).")
+         |> assign_new_category_form(params)}
+    end
+  end
+
+  def handle_event(
+        "update_category_password",
+        %{"category_id" => raw_id, "password" => pwd},
+        socket
+      ) do
+    with {id, ""} <- Integer.parse(raw_id),
+         %Category{} = cat <- Catalog.get_category(id),
+         {:ok, updated} <- Catalog.update_category(cat, %{password: pwd}) do
+      status =
+        if Category.protected?(updated),
+          do: "protégée par mot de passe 🔒",
+          else: "publique (sans mot de passe)"
+
+      {:noreply,
+       socket
+       |> put_flash(:info, "Catégorie « #{updated.name} » désormais #{status}.")
+       |> refresh_categories()}
+    else
+      _ ->
+        {:noreply, put_flash(socket, :error, "Impossible de modifier la catégorie.")}
+    end
+  end
+
+  def handle_event("delete_category", %{"id" => raw_id}, socket) do
+    with {id, ""} <- Integer.parse(raw_id),
+         %Category{} = cat <- Catalog.get_category(id) do
+      case Catalog.delete_category(cat) do
+        {:ok, deleted} ->
+          {:noreply,
+           socket
+           |> put_flash(
+             :info,
+             "Catégorie « #{deleted.name} » supprimée (ses stickers ont été basculés en Général)."
+           )
+           |> refresh_categories()
+           |> assign(:stickers, Catalog.list_stickers())}
+
+        {:error, :cannot_delete_default} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "La catégorie par défaut Général ne peut pas être supprimée."
+           )}
+
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Erreur lors de la suppression de la catégorie.")}
+      end
+    else
+      _ ->
+        {:noreply, put_flash(socket, :error, "Catégorie introuvable.")}
+    end
+  end
+
+  # --- Optimisation & Miniatures WebP ---
+
+  def handle_event("optimize_all_uploads", _params, socket) do
+    case ImageOptimizer.optimize_all_uploads() do
+      {:ok, stats} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :info,
+           "Optimisation terminée : #{stats.thumbnails_created} miniature(s) WebP générée(s), #{stats.optimized} image(s) lourde(s) compressée(s)."
+         )}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Erreur lors de l'optimisation : #{inspect(reason)}")}
+    end
+  end
+
+  # --- Gestion des Stickers ---
+
   def handle_event("toggle_sticker", %{"id" => id}, socket) do
     with {sticker_id, ""} <- Integer.parse(id),
          sticker <- Catalog.get_sticker(sticker_id),
@@ -186,12 +295,12 @@ defmodule StickerShopWeb.Admin.OrderLive do
     end
   end
 
-  def handle_event("set_sticker_category", %{"id" => id, "category" => category}, socket) do
+  def handle_event("set_sticker_category", %{"id" => id, "category" => category_slug}, socket) do
     with {sticker_id, ""} <- Integer.parse(id),
          sticker when not is_nil(sticker) <- Catalog.get_sticker(sticker_id),
-         valid_category when valid_category in ["general", "bicus"] <- category,
-         {:ok, updated} <- Catalog.update_sticker(sticker, %{category: valid_category}) do
-      label = if updated.category == "bicus", do: "Bicus 🔒", else: "Général"
+         %Category{} = cat <- Map.get(socket.assigns.categories_by_slug, category_slug),
+         {:ok, updated} <- Catalog.update_sticker(sticker, %{category: cat.slug}) do
+      label = category_badge_label(cat)
 
       {:noreply,
        socket
@@ -220,26 +329,39 @@ defmodule StickerShopWeb.Admin.OrderLive do
         clean_ext = if ext in ~w(.svg .png .jpg .jpeg .webp), do: ext, else: ".png"
         filename = "sticker_#{timestamp}_#{random_suffix}#{clean_ext}"
 
-        # 1. Dossier source pour persistance au-delà des recompilations
+        # 1. Dossier source pour persistance au-delà des recompilations (+ génération auto de thumb_*.webp)
         source_dir = Path.expand("priv/static/uploads/stickers")
         File.mkdir_p!(source_dir)
         source_target = Path.join(source_dir, filename)
         ImageOptimizer.optimize(path, source_target)
 
-        # 2. Dossier build pour service immédiat par Plug.Static
+        # 2. Dossier build pour service immédiat par Plug.Static (image HD + miniature WebP)
         build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
         File.mkdir_p!(build_dir)
-        File.cp!(source_target, Path.join(build_dir, filename))
+
+        if Path.expand(build_dir) != source_dir do
+          File.cp!(source_target, Path.join(build_dir, filename))
+
+          thumb_name = ImageOptimizer.thumbnail_filename(filename)
+          source_thumb = Path.join(source_dir, thumb_name)
+
+          if File.regular?(source_thumb) do
+            File.cp!(source_thumb, Path.join(build_dir, thumb_name))
+          end
+        end
 
         {:ok, "/uploads/stickers/#{filename}"}
       end)
 
     image_path = List.first(uploaded_files)
 
+    requested_cat = params["category"] || "general"
+
     category =
-      case params["category"] do
-        "bicus" -> "bicus"
-        _ -> "general"
+      if Map.has_key?(socket.assigns.categories_by_slug, requested_cat) do
+        requested_cat
+      else
+        "general"
       end
 
     with {:ok, price_cents} <- parse_price_cents(params["price_euros"]),
@@ -313,20 +435,55 @@ defmodule StickerShopWeb.Admin.OrderLive do
   def status_label(:cancelled), do: "Annulée"
   def status_label(other), do: to_string(other)
 
+  def category_select_options(categories) do
+    Enum.map(categories, fn cat ->
+      suffix = if Category.protected?(cat), do: " (protégé par code 🔒)", else: " (public)"
+      {"#{cat.name}#{suffix}", cat.slug}
+    end)
+  end
+
+  def category_badge_label(%Category{} = cat) do
+    if Category.protected?(cat), do: "#{cat.name} 🔒", else: cat.name
+  end
+
+  def sticker_category_badge(categories_by_slug, slug) do
+    case Map.get(categories_by_slug, slug) do
+      %Category{} = cat -> category_badge_label(cat)
+      _ -> String.capitalize(to_string(slug))
+    end
+  end
+
+  def sticker_category_protected?(categories_by_slug, slug) do
+    case Map.get(categories_by_slug, slug) do
+      %Category{} = cat -> Category.protected?(cat)
+      _ -> false
+    end
+  end
+
   defp remove_uploaded_file(image_path) when is_binary(image_path) do
     if String.starts_with?(image_path, "/uploads/stickers/") do
       filename = Path.basename(image_path)
-      source_target = Path.expand(Path.join("priv/static/uploads/stickers", filename))
+      thumb_name = ImageOptimizer.thumbnail_filename(filename)
 
-      build_target =
-        Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers", filename])
+      source_dir = Path.expand("priv/static/uploads/stickers")
+      build_dir = Path.join([:code.priv_dir(:sticker_shop), "static", "uploads", "stickers"])
 
-      File.rm(source_target)
-      File.rm(build_target)
+      File.rm(Path.join(source_dir, filename))
+      File.rm(Path.join(source_dir, thumb_name))
+      File.rm(Path.join(build_dir, filename))
+      File.rm(Path.join(build_dir, thumb_name))
     end
   end
 
   defp remove_uploaded_file(_), do: :ok
+
+  defp refresh_categories(socket) do
+    categories = Catalog.list_categories()
+
+    socket
+    |> assign(:categories, categories)
+    |> assign(:categories_by_slug, Map.new(categories, &{&1.slug, &1}))
+  end
 
   defp assign_new_sticker_form(socket, params) do
     default_params = %{
@@ -339,6 +496,16 @@ defmodule StickerShopWeb.Admin.OrderLive do
 
     form_params = Map.merge(default_params, params)
     assign(socket, :new_sticker_form, to_form(form_params, as: :new_sticker))
+  end
+
+  defp assign_new_category_form(socket, params) do
+    default_params = %{
+      "name" => "",
+      "password" => ""
+    }
+
+    form_params = Map.merge(default_params, params)
+    assign(socket, :new_category_form, to_form(form_params, as: :new_category))
   end
 
   defp refresh_stats(socket) do

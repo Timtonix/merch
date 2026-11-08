@@ -95,9 +95,14 @@ defmodule StickerShop.Catalog.Category do
     env_pwd = System.get_env("BICUS_PASSWORD")
 
     cond do
-      is_binary(db_pwd) and trimmed == String.trim(db_pwd) -> true
-      is_binary(env_pwd) and String.trim(env_pwd) != "" and trimmed == String.trim(env_pwd) -> true
-      true -> false
+      is_binary(db_pwd) and trimmed == String.trim(db_pwd) ->
+        true
+
+      is_binary(env_pwd) and String.trim(env_pwd) != "" and trimmed == String.trim(env_pwd) ->
+        true
+
+      true ->
+        false
     end
   end
 

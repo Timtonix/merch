@@ -256,4 +256,36 @@ defmodule StickerShopWeb.Admin.OrderLiveTest do
     assert is_nil(Catalog.get_sticker(created.id))
     refute File.exists?(source_path)
   end
+
+  test "creates and deletes custom categories from admin catalog tab", %{
+    conn: conn,
+    sticker: sticker
+  } do
+    conn = admin_conn(conn)
+    {:ok, view, _html} = live(conn, ~p"/admin")
+
+    view |> element("#tab-stickers-btn") |> render_click()
+
+    # Crée une nouvelle catégorie protégée "Collectif"
+    view
+    |> form("#new-category-form",
+      new_category: %{
+        "name" => "Collectif",
+        "password" => "code123"
+      }
+    )
+    |> render_submit()
+
+    assert render(view) =~ "Catégorie « Collectif » (privée 🔒) créée !"
+    assert has_element?(view, "#admin-category-collectif")
+
+    # Assigne le sticker existant à cette nouvelle catégorie
+    view |> element("#sticker-#{sticker.id}-cat-collectif") |> render_click()
+    assert Catalog.get_sticker!(sticker.id).category == "collectif"
+
+    # Supprime la catégorie "Collectif" -> le sticker revient en "general"
+    view |> element("#delete-category-collectif") |> render_click()
+    refute has_element?(view, "#admin-category-collectif")
+    assert Catalog.get_sticker!(sticker.id).category == "general"
+  end
 end

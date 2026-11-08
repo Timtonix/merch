@@ -2,7 +2,7 @@ defmodule StickerShopWeb.ShopLive do
   use StickerShopWeb, :live_view
 
   alias StickerShop.Catalog
-  alias StickerShop.Catalog.Formats
+  alias StickerShop.Catalog.{Category, Formats}
   alias StickerShop.Orders
   alias StickerShop.Orders.OrderNotifier
 
@@ -17,19 +17,30 @@ defmodule StickerShopWeb.ShopLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    categories = Catalog.list_categories()
+    categories_by_slug = Map.new(categories, &{&1.slug, &1})
+
+    unlocked_categories =
+      categories
+      |> Enum.reject(&Category.protected?/1)
+      |> Enum.map(& &1.slug)
+
     all_stickers = Catalog.list_active_stickers()
 
     socket =
       socket
       |> assign(:page_title, "Boutique · Stickers")
       |> assign(:current_scope, nil)
+      |> assign(:categories, categories)
+      |> assign(:categories_by_slug, categories_by_slug)
       |> assign(:all_stickers, all_stickers)
       |> assign(:stickers_by_id, Map.new(all_stickers, &{&1.id, &1}))
       |> assign(:formats, Formats.all())
       |> assign(:selected_formats, %{})
       |> assign(:selected_category, "all")
       |> assign(:search_query, "")
-      |> assign(:unlocked_categories, ["general"])
+      |> assign(:unlocked_categories, unlocked_categories)
+      |> assign(:pending_unlock_category, nil)
       |> assign(:show_password_modal, false)
       |> assign(:preview_sticker, nil)
       |> assign(:quantities, %{})
@@ -39,44 +50,54 @@ defmodule StickerShopWeb.ShopLive do
       |> assign(:placed_order, nil)
       |> assign(:payment_info, OrderNotifier.config_info())
       |> assign(:form, to_form(checkout_changeset(%{}), as: :checkout))
-      |> stream(:stickers, filter_stickers(all_stickers, "all", ["general"], ""))
+      |> stream(
+        :stickers,
+        filter_stickers(all_stickers, "all", unlocked_categories, categories_by_slug, "")
+      )
 
     {:ok, socket}
   end
 
   @impl true
-  def handle_event("filter_category", %{"category" => "bicus"}, socket) do
-    if "bicus" in socket.assigns.unlocked_categories do
-      filtered =
-        filter_stickers(
-          socket.assigns.all_stickers,
-          "bicus",
-          socket.assigns.unlocked_categories,
-          socket.assigns.search_query
-        )
-
-      {:noreply,
-       socket
-       |> assign(:selected_category, "bicus")
-       |> stream(:stickers, filtered, reset: true)}
-    else
-      {:noreply, assign(socket, :show_password_modal, true)}
-    end
-  end
-
-  def handle_event("filter_category", %{"category" => category}, socket) do
+  def handle_event("filter_category", %{"category" => "all"}, socket) do
     filtered =
       filter_stickers(
         socket.assigns.all_stickers,
-        category,
+        "all",
         socket.assigns.unlocked_categories,
+        socket.assigns.categories_by_slug,
         socket.assigns.search_query
       )
 
     {:noreply,
      socket
-     |> assign(:selected_category, category)
+     |> assign(:selected_category, "all")
      |> stream(:stickers, filtered, reset: true)}
+  end
+
+  def handle_event("filter_category", %{"category" => slug}, socket) do
+    cat = Map.get(socket.assigns.categories_by_slug, slug)
+
+    if cat && Category.protected?(cat) && slug not in socket.assigns.unlocked_categories do
+      {:noreply,
+       socket
+       |> assign(:pending_unlock_category, cat)
+       |> assign(:show_password_modal, true)}
+    else
+      filtered =
+        filter_stickers(
+          socket.assigns.all_stickers,
+          slug,
+          socket.assigns.unlocked_categories,
+          socket.assigns.categories_by_slug,
+          socket.assigns.search_query
+        )
+
+      {:noreply,
+       socket
+       |> assign(:selected_category, slug)
+       |> stream(:stickers, filtered, reset: true)}
+    end
   end
 
   def handle_event("search", %{"query" => query}, socket) do
@@ -87,6 +108,7 @@ defmodule StickerShopWeb.ShopLive do
         socket.assigns.all_stickers,
         socket.assigns.selected_category,
         socket.assigns.unlocked_categories,
+        socket.assigns.categories_by_slug,
         trimmed
       )
 
@@ -102,6 +124,7 @@ defmodule StickerShopWeb.ShopLive do
         socket.assigns.all_stickers,
         socket.assigns.selected_category,
         socket.assigns.unlocked_categories,
+        socket.assigns.categories_by_slug,
         ""
       )
 
@@ -126,33 +149,40 @@ defmodule StickerShopWeb.ShopLive do
   end
 
   def handle_event("unlock_category", %{"password" => pwd}, socket) do
-    expected_pwd = System.get_env("BICUS_PASSWORD") || "bicus123"
+    target_cat =
+      socket.assigns.pending_unlock_category ||
+        Map.get(socket.assigns.categories_by_slug, "bicus")
 
-    if String.trim(pwd) == expected_pwd do
-      unlocked = ["bicus" | socket.assigns.unlocked_categories] |> Enum.uniq()
+    if target_cat && Category.valid_password?(target_cat, pwd) do
+      unlocked = [target_cat.slug | socket.assigns.unlocked_categories] |> Enum.uniq()
 
       filtered =
         filter_stickers(
           socket.assigns.all_stickers,
-          "bicus",
+          target_cat.slug,
           unlocked,
+          socket.assigns.categories_by_slug,
           socket.assigns.search_query
         )
 
       {:noreply,
        socket
        |> assign(:unlocked_categories, unlocked)
-       |> assign(:selected_category, "bicus")
+       |> assign(:selected_category, target_cat.slug)
+       |> assign(:pending_unlock_category, nil)
        |> assign(:show_password_modal, false)
        |> stream(:stickers, filtered, reset: true)
-       |> put_flash(:info, "Catégorie Bicus déverrouillée !")}
+       |> put_flash(:info, "Catégorie #{target_cat.name} déverrouillée !")}
     else
       {:noreply, put_flash(socket, :error, "Mot de passe incorrect.")}
     end
   end
 
   def handle_event("close_password_modal", _params, socket) do
-    {:noreply, assign(socket, :show_password_modal, false)}
+    {:noreply,
+     socket
+     |> assign(:show_password_modal, false)
+     |> assign(:pending_unlock_category, nil)}
   end
 
   def handle_event("select_format", %{"id" => raw_id, "format" => format_id}, socket) do
@@ -246,6 +276,7 @@ defmodule StickerShopWeb.ShopLive do
                 all_stickers,
                 socket.assigns.selected_category,
                 socket.assigns.unlocked_categories,
+                socket.assigns.categories_by_slug,
                 socket.assigns.search_query
               )
 
@@ -286,7 +317,7 @@ defmodule StickerShopWeb.ShopLive do
     {:noreply, assign(socket, :placed_order, nil)}
   end
 
-  defp filter_stickers(stickers, category, unlocked_categories, search_query) do
+  defp filter_stickers(stickers, category, unlocked_categories, categories_by_slug, search_query) do
     normalized_query =
       search_query
       |> to_string()
@@ -294,18 +325,17 @@ defmodule StickerShopWeb.ShopLive do
       |> String.downcase()
 
     Enum.filter(stickers, fn sticker ->
-      bicus_allowed = "bicus" in unlocked_categories
+      sticker_cat = Map.get(categories_by_slug, sticker.category)
+      is_protected = Category.protected?(sticker_cat)
+      is_unlocked = sticker.category in unlocked_categories or not is_protected
 
       category_match =
         case category do
           "all" ->
-            sticker.category != "bicus" or bicus_allowed
-
-          "bicus" ->
-            sticker.category == "bicus" and bicus_allowed
+            is_unlocked
 
           other ->
-            sticker.category == other
+            sticker.category == other and is_unlocked
         end
 
       search_match =
@@ -314,6 +344,20 @@ defmodule StickerShopWeb.ShopLive do
 
       category_match and search_match
     end)
+  end
+
+  def category_name(categories_by_slug, slug) do
+    case Map.get(categories_by_slug, slug) do
+      %Category{name: name} -> name
+      _ -> String.capitalize(to_string(slug))
+    end
+  end
+
+  def category_protected?(categories_by_slug, slug) do
+    case Map.get(categories_by_slug, slug) do
+      %Category{} = cat -> Category.protected?(cat)
+      _ -> false
+    end
   end
 
   defp bump_quantity(socket, raw_id, format_id, delta) do
