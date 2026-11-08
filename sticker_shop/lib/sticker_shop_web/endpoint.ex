@@ -24,6 +24,7 @@ defmodule StickerShopWeb.Endpoint do
     at: "/",
     from: :sticker_shop,
     gzip: not code_reloading?,
+    cache_control_for_etags: "public, max-age=31536000",
     only: StickerShopWeb.static_paths(),
     raise_on_missing_only: code_reloading?
 

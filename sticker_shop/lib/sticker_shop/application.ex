@@ -5,6 +5,8 @@ defmodule StickerShop.Application do
 
   use Application
 
+  @env Mix.env()
+
   @impl true
   def start(_type, _args) do
     children = [
@@ -21,7 +23,15 @@ defmodule StickerShop.Application do
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: StickerShop.Supervisor]
-    Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children, opts)
+
+    if @env != :test do
+      Task.start(fn ->
+        StickerShop.Catalog.ImageOptimizer.optimize_all_uploads()
+      end)
+    end
+
+    result
   end
 
   # Tell Phoenix to update the endpoint configuration
